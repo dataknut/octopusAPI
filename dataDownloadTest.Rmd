@@ -27,10 +27,16 @@ library(hms)
 library(httr)
 library(jsonlite)
 library(lubridate)
+library(skimr)
 
-source("~/octopusAPI_key.R")
-
+# parameters ----
+source("~/octopusAPI_key.R") # api params
 # DO NOT PRINT THE KEY!
+
+rmdParams <- list() # params for this report
+rmdParams$odPath <- "~/Dropbox/data/ba_octopus/" # where to save the json files
+message("Test if rmdParams$odPath (", rmdParams$odPath, ") exists...")
+dir.exists(path.expand(rmdParams$odPath))
 
 # Functions ----
 makeFlexTable <- function(df, cap = "caption"){
@@ -43,7 +49,44 @@ makeFlexTable <- function(df, cap = "caption"){
   return(flextable::autofit(ft))
 }
 
+makeDerivedVars <- function(dt){
+  # takes a consumption data.table and adds frequently used derived vars
+  dt[, dv_start := lubridate::as_datetime(interval_start)] # start of half-hour
+  dt[, dv_hms := hms::as_hms(dv_start)]
+  dt[, dv_date := lubridate::as_date(dv_start)]
+  
+  dt[, dv_peakPeriod := ifelse(dv_hms < as_hms("07:00:00"), "Early morning", NA)]
+  dt[, dv_peakPeriod := ifelse(dv_hms >= as_hms("07:00:00") & dv_hms < as_hms("09:00:00"), 
+                               "Morning peak", 
+                               dv_peakPeriod)]
+  dt[, dv_peakPeriod := ifelse(dv_hms >= as_hms("09:00:00") & dv_hms < as_hms("16:00:00"), 
+                               "Day time", 
+                               dv_peakPeriod)]
+  dt[, dv_peakPeriod := ifelse(dv_hms >= as_hms("16:00:00") & dv_hms < as_hms("20:00:00"), 
+                               "Evening peak", 
+                               dv_peakPeriod)]
+  dt[, dv_peakPeriod := ifelse(dv_hms >= as_hms("20:00:00"), 
+                               "Late evening", 
+                               dv_peakPeriod)]
+  
+  levels <- c("Early morning", "Morning peak", "Day time", 
+              "Evening peak", "Late evening") # set order nicely for plots & tables
+  # check
+  # dt[, dv_hour := lubridate::hour(dv_start)]
+  #table(dt$dv_hour, dt$dv_peakPeriod)
+  
+  dt[, dv_peakPeriod := factor(dv_peakPeriod, levels)] # set order for plots etc
+  
+  dt[, dv_weekend := ifelse(lubridate::wday(dv_date, label = TRUE) == "Sat",
+                            "Saturday",
+                            "Weekday")]
+  dt[, dv_weekend := ifelse(lubridate::wday(dv_date, label = TRUE) == "Sun",
+                            "Sunday",
+                            dv_weekend)]
+  return(dt)
+}
 ```
+
 # Inspired by
 
 https://www.guylipman.com/octopus/api_guide.html
@@ -119,59 +162,49 @@ url <- paste0("https://api.octopus.energy/v1/electricity-meter-points/",
               "consumption/",
               "?period_from=2022-01-01T00:00Z",
               "&page_size=10000")
+# get data via httr ----
 resp <- httr::GET(url = url, authenticate(user = apiParams$key, password = ""))
-df <- jsonlite::parse_json(resp, simplifyVector = TRUE)
-dt <- data.table::as.data.table(df$results)
-dt[, dv_start := lubridate::as_datetime(interval_start)]
-summary(dt)
+df <- jsonlite::parse_json(resp, simplifyVector = TRUE) # creates a df of which 'results' = the data
 
-dt[, dv_hms := hms::as_hms(dv_start)]
-dt[, dv_date := lubridate::as_date(dv_start)]
+elecCons_dt <- data.table::as.data.table(df$results) # convert to dt
+
+# derived variables ----
+elecCons_dt <- makeDerivedVars(elecCons_dt)
+
+maxTime <- max(elecCons_dt$dv_start)
+
+hoursAgo <- now() - maxTime
 ```
 
-Figure \@ref(fig:elecImportPlot) shows half-hourly electricity import ('consumption') for the current year.
+The data used here is up to `r maxTime`, which is `r round(hoursAgo,1)` hours ago. In general the Octopus API seems to have data up to `midnight last night`.
 
-```{r elecImportHalfHourlyPlot, fig.cap="Electricity import (current year)"}
-ggplot2::ggplot(dt, aes(x = dv_date, y = dv_hms, fill = consumption)) +
+Figure \@ref(fig:plotElecImportHalfHourly) shows half-hourly electricity import ('consumption') for the current year. Spot the power cuts...
+
+> To do: mark weekends somehow
+
+```{r plotElecImportHalfHourly, fig.cap="Electricity import (current year)"}
+ggplot2::ggplot(elecCons_dt, aes(x = dv_date, y = dv_hms, fill = consumption)) +
   geom_tile() +
+  theme(legend.position = "bottom") +
   scale_fill_viridis_c(name = "Electricity import (kWh)") +
   labs(x = "Date",
        y = "Half-hour")
 ```
 
-Spot the power cuts...
-
-```{r elecImportDailyPlot, fig.cap="Electricity import (current year)"}
-
-dt[, dv_peakPeriod := ifelse(dv_hms < as_hms("07:00:00"), "Early morning", NA)]
-dt[, dv_peakPeriod := ifelse(dv_hms >= as_hms("07:00:00") & dv_hms < as_hms("09:00:00"), 
-                                        "Morning peak", 
-                                        dv_peakPeriod)]
-dt[, dv_peakPeriod := ifelse(dv_hms >= as_hms("09:00:00") & dv_hms < as_hms("16:00:00"), 
-                                        "Day time", 
-                                        dv_peakPeriod)]
-dt[, dv_peakPeriod := ifelse(dv_hms >= as_hms("16:00:00") & dv_hms < as_hms("20:00:00"), 
-                                        "Evening peak", 
-                                        dv_peakPeriod)]
-dt[, dv_peakPeriod := ifelse(dv_hms >= as_hms("20:00:00"), 
-                                        "Late evening", 
-                                        dv_peakPeriod)]
-
-levels <- c("Early morning", "Morning peak", "Day time", 
-            "Evening peak", "Late evening")
-dt[, dv_peakPeriod := factor(dv_peakPeriod, levels)] # set order for plots etc
 
 
-# check
-dt[, dv_hour := lubridate::hour(dv_start)]
-table(dt$dv_hour, dt$dv_peakPeriod)
+Figure \@ref(fig:plotElecImportDaily) shows the mean daily kWh import with a smoothed curve.
 
-# plot
-plotDT <- dt[, .(sum_kWh = sum(consumption),
+> To do: mark weekends etc
+
+```{r plotElecImportDaily, fig.cap="Electricity import (current year)"}
+
+plotDT <- elecCons_dt[, .(sum_kWh = sum(consumption),
                  mean_kWh = mean(consumption),
-                 nObs = .N), keyby = .(dv_date, dv_peakPeriod)]
+                 nObs = .N), keyby = .(dv_date, dv_peakPeriod, dv_weekend)]
 
-ggplot2::ggplot(plotDT, aes(x = dv_date, y = mean_kWh, colour = dv_peakPeriod)) +
+ggplot2::ggplot(plotDT, aes(x = dv_date, y = mean_kWh, 
+                            colour = dv_peakPeriod)) +
   geom_line() +
   geom_smooth() +
   #facet_grid(dv_peakPeriod ~ .) +
@@ -182,7 +215,7 @@ ggplot2::ggplot(plotDT, aes(x = dv_date, y = mean_kWh, colour = dv_peakPeriod)) 
 
 ### Export
 
-This will be a new MPAN but specified as export. We do not have this even though the PV is exporting on (some) days.
+This will be a new MPAN but specified as export - although the url will still say `consumption`. We do not have this even though the PV is exporting on (some) days.
 
 It may be that we only get this data if we sign up for the export tariff.
 
@@ -192,7 +225,7 @@ See https://www.guylipman.com/octopus/api_guide.html#s3
 
 ```
 
-```{r elecExportPlot}
+```{r plotElecExport}
 
 ```
 
@@ -208,24 +241,61 @@ url <- paste0("https://api.octopus.energy/v1/gas-meter-points/",
               "&page_size=10000")
 resp <- httr::GET(url = url, authenticate(user = apiParams$key, password = ""))
 df <- jsonlite::parse_json(resp, simplifyVector = TRUE)
-dt <- data.table::as.data.table(df$results)
-dt[, dv_start := lubridate::as_datetime(interval_start)]
-summary(dt)
-
-dt[, dv_hms := hms::as_hms(dv_start)]
-dt[, dv_date := lubridate::as_date(dv_start)]
+gasCons_dt <- data.table::as.data.table(df$results)
+gasCons_dt <- makeDerivedVars(gasCons_dt)
 ```
 
 Note that this data starts later as we finally got the original un-registered smart meter replaced in February.
 
-Figure \@ref(fig:gasImportPlot) shows half-hourly gas import ('consumption') for the current year. The power cuts are even easier to see here.
+Figure \@ref(fig:plotGasImport) shows half-hourly gas import ('consumption') for the current year. The power cuts are even easier to see here.
 
-```{r gasImportPlot, fig.cap="Gas consumption (current year)"}
-ggplot2::ggplot(dt, aes(x = dv_date, y = dv_hms, fill = consumption)) +
+```{r plotGasImport, fig.cap="Gas consumption (current year)"}
+ggplot2::ggplot(gasCons_dt, aes(x = dv_date, y = dv_hms, fill = consumption)) +
   geom_tile() +
+  theme(legend.position = "bottom") +
   scale_fill_viridis_c(name = "Gas import (kWh)") +
   labs(x = "Date",
        y = "Half-hour")
 ```
 
-# The end
+Figure \@ref(fig:plotGasImportDaily) shows the mean daily kWh import with a smoothed curve.
+
+> To do: mark weekends etc
+
+```{r plotGasImportDaily, fig.cap="Electricity import (current year)"}
+
+plotDT <- gasCons_dt[, .(sum_kWh = sum(consumption),
+                 mean_kWh = mean(consumption),
+                 nObs = .N), keyby = .(dv_date, dv_peakPeriod, dv_weekend)]
+
+ggplot2::ggplot(plotDT, aes(x = dv_date, y = mean_kWh, 
+                            colour = dv_peakPeriod)) +
+  geom_line() +
+  geom_smooth() +
+  #facet_grid(dv_peakPeriod ~ .) +
+  scale_colour_viridis_d(name = "Peak period") +
+  labs(x = "Date",
+       y = "Mean kWh per period")
+```
+
+# Annexes
+## Data descriptions
+### Electricity consumption
+
+Use `skmir::skim()`to summarise.
+
+```{r skimElecCons}
+skimr::skim(elecCons_dt)
+```
+
+### Gas consumption
+
+Use `skmir::skim()`to summarise.
+
+```{r skimGasCons}
+skimr::skim(gasCons_dt)
+```
+
+
+# References
+
