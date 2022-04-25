@@ -1,0 +1,231 @@
+---
+title: "Test octopus API"
+author: "Ben Anderson"
+date: 'Last run at: `r Sys.time()`'
+output:
+  bookdown::html_document2:
+    fig_caption: yes
+    code_folding: hide
+    number_sections: yes
+    toc: yes
+    toc_depth: 2
+    toc_float: TRUE
+  bookdown::pdf_document2:
+    fig_caption: yes
+    number_sections: yes
+---
+
+```{r setup, include=FALSE}
+# options ----
+knitr::opts_chunk$set(echo = TRUE)
+
+# libraries ----
+library(data.table)
+library(flextable)
+library(ggplot2)
+library(hms)
+library(httr)
+library(jsonlite)
+library(lubridate)
+
+source("~/octopusAPI_key.R")
+
+# DO NOT PRINT THE KEY!
+
+# Functions ----
+makeFlexTable <- function(df, cap = "caption"){
+  # makes a pretty flextable - see https://cran.r-project.org/web/packages/flextable/index.html
+  ft <- flextable::flextable(df)
+  ft <- colformat_double(ft, digits = 1)
+  ft <- fontsize(ft, size = 9)
+  ft <- fontsize(ft, size = 10, part = "header")
+  ft <- set_caption(ft, caption = cap)
+  return(flextable::autofit(ft))
+}
+
+```
+# Inspired by
+
+https://www.guylipman.com/octopus/api_guide.html
+
+and using
+
+https://developer.octopus.energy/docs/api/#
+
+# Test without authentication
+
+```{r getBasic}
+# test
+url <- "https://api.octopus.energy/v1/products"
+message("Getting: ", url)
+resp <- httr::GET(url)
+
+message("Status code: ", resp$status_code)
+
+df <- jsonlite::parse_json(resp, simplifyVector = TRUE)
+makeFlexTable(head(df$results), cap = "Example products list (first 6 rows)")
+```
+
+# Tests with authentication
+
+## Basic info
+
+```{r getAuth}
+url <- paste0("https://api.octopus.energy/v1/accounts/", apiParams$accountNo , "/")
+
+resp <- httr::GET(url = url, authenticate(user = apiParams$key, password = ""))
+
+df <- jsonlite::parse_json(resp, simplifyVector = TRUE)
+
+props <- data.table::as.data.table(df$properties)
+makeFlexTable(head(props[, .(town, county, 
+                             electricity_meter_points,gas_meter_points)]), cap = "Properties linked to this account (non-disclosive data)")
+
+
+```
+
+List the electricity meter points.
+
+```{r listElec}
+# this is a list of n mpans
+length(props$electricity_meter_points)
+message("n MPANS listed: ", length(df$properties$electricity_meter_points))
+for(n in 1:length(df$properties$electricity_meter_points)){
+  print(props$electricity_meter_points[n])
+}
+
+```
+
+
+```{r listGas}
+length(df$properties$gas_meter_points)
+message("n MPRNS listed: ", length(df$properties$gas_meter_points))
+for(n in 1:length(df$properties$gas_meter_points)){
+  print(df$properties$gas_meter_points[n])
+}
+```
+
+## Electricity
+
+### Consumption
+
+See: https://www.guylipman.com/octopus/api_guide.html#s3
+
+```{r getElecConsumption}
+url <- paste0("https://api.octopus.energy/v1/electricity-meter-points/", 
+              apiParams$elec_import_mpan , "/",
+              "meters/",
+              apiParams$elec_import_serial, "/",
+              "consumption/",
+              "?period_from=2022-01-01T00:00Z",
+              "&page_size=10000")
+resp <- httr::GET(url = url, authenticate(user = apiParams$key, password = ""))
+df <- jsonlite::parse_json(resp, simplifyVector = TRUE)
+dt <- data.table::as.data.table(df$results)
+dt[, dv_start := lubridate::as_datetime(interval_start)]
+summary(dt)
+
+dt[, dv_hms := hms::as_hms(dv_start)]
+dt[, dv_date := lubridate::as_date(dv_start)]
+```
+
+Figure \@ref(fig:elecImportPlot) shows half-hourly electricity import ('consumption') for the current year.
+
+```{r elecImportHalfHourlyPlot, fig.cap="Electricity import (current year)"}
+ggplot2::ggplot(dt, aes(x = dv_date, y = dv_hms, fill = consumption)) +
+  geom_tile() +
+  scale_fill_viridis_c(name = "Electricity import (kWh)") +
+  labs(x = "Date",
+       y = "Half-hour")
+```
+
+Spot the power cuts...
+
+```{r elecImportDailyPlot, fig.cap="Electricity import (current year)"}
+
+dt[, dv_peakPeriod := ifelse(dv_hms < as_hms("07:00:00"), "Early morning", NA)]
+dt[, dv_peakPeriod := ifelse(dv_hms >= as_hms("07:00:00") & dv_hms < as_hms("09:00:00"), 
+                                        "Morning peak", 
+                                        dv_peakPeriod)]
+dt[, dv_peakPeriod := ifelse(dv_hms >= as_hms("09:00:00") & dv_hms < as_hms("16:00:00"), 
+                                        "Day time", 
+                                        dv_peakPeriod)]
+dt[, dv_peakPeriod := ifelse(dv_hms >= as_hms("16:00:00") & dv_hms < as_hms("20:00:00"), 
+                                        "Evening peak", 
+                                        dv_peakPeriod)]
+dt[, dv_peakPeriod := ifelse(dv_hms >= as_hms("20:00:00"), 
+                                        "Late evening", 
+                                        dv_peakPeriod)]
+
+levels <- c("Early morning", "Morning peak", "Day time", 
+            "Evening peak", "Late evening")
+dt[, dv_peakPeriod := factor(dv_peakPeriod, levels)] # set order for plots etc
+
+
+# check
+dt[, dv_hour := lubridate::hour(dv_start)]
+table(dt$dv_hour, dt$dv_peakPeriod)
+
+# plot
+plotDT <- dt[, .(sum_kWh = sum(consumption),
+                 mean_kWh = mean(consumption),
+                 nObs = .N), keyby = .(dv_date, dv_peakPeriod)]
+
+ggplot2::ggplot(plotDT, aes(x = dv_date, y = mean_kWh, colour = dv_peakPeriod)) +
+  geom_line() +
+  geom_smooth() +
+  #facet_grid(dv_peakPeriod ~ .) +
+  scale_colour_viridis_d(name = "Peak period") +
+  labs(x = "Date",
+       y = "Mean kWh per period")
+```
+
+### Export
+
+This will be a new MPAN but specified as export. We do not have this even though the PV is exporting on (some) days.
+
+It may be that we only get this data if we sign up for the export tariff.
+
+See https://www.guylipman.com/octopus/api_guide.html#s3
+
+```{r getElecExport}
+
+```
+
+```{r elecExportPlot}
+
+```
+
+## Gas Consumption
+
+```{r getGasConsumption}
+url <- paste0("https://api.octopus.energy/v1/gas-meter-points/", 
+              apiParams$gas_mpan , "/",
+              "meters/",
+              apiParams$gas_serial, "/",
+              "consumption",
+              "?period_from=2022-01-01T00:00Z",
+              "&page_size=10000")
+resp <- httr::GET(url = url, authenticate(user = apiParams$key, password = ""))
+df <- jsonlite::parse_json(resp, simplifyVector = TRUE)
+dt <- data.table::as.data.table(df$results)
+dt[, dv_start := lubridate::as_datetime(interval_start)]
+summary(dt)
+
+dt[, dv_hms := hms::as_hms(dv_start)]
+dt[, dv_date := lubridate::as_date(dv_start)]
+```
+
+Note that this data starts later as we finally got the original un-registered smart meter replaced in February.
+
+Figure \@ref(fig:gasImportPlot) shows half-hourly gas import ('consumption') for the current year. The power cuts are even easier to see here.
+
+```{r gasImportPlot, fig.cap="Gas consumption (current year)"}
+ggplot2::ggplot(dt, aes(x = dv_date, y = dv_hms, fill = consumption)) +
+  geom_tile() +
+  scale_fill_viridis_c(name = "Gas import (kWh)") +
+  labs(x = "Date",
+       y = "Half-hour")
+```
+
+# The end
