@@ -193,12 +193,37 @@ ggplot2::ggplot(elecCons_dt, aes(x = dv_date, y = dv_hms, fill = consumption)) +
 
 
 
-Figure \@ref(fig:plotElecImportDaily) shows the mean daily kWh import with a smoothed curve.
-
-> To do: mark weekends etc
-
 ```{r plotElecImportDaily, fig.cap="Electricity import (current year)"}
 
+plotDT <- elecCons_dt[, .(sum_kWh = sum(consumption),
+                 mean_kWh = mean(consumption),
+                 nObs = .N), keyby = .(dv_date, dv_weekend)]
+
+ggplot2::ggplot(plotDT, aes(x = dv_date, y = mean_kWh, 
+                            colour = dv_weekend)) +
+  geom_point() +
+  geom_smooth() +
+  #facet_grid(dv_peakPeriod ~ .) +
+  scale_colour_viridis_d(name = "Weekend") +
+  labs(x = "Date",
+       y = "Mean kWh")
+```
+
+Figure \@ref(fig:plotElecImportDailyByPeriod) shows the mean daily kWh import with a smoothed curve for each period as defined below.
+
+`Early morning` is effectively our baseload.
+
+```{r checkPeriods}
+# check periods
+t <- elecCons_dt[, .(min = min(dv_hms),
+                max = max(dv_hms)),
+            keyby = .(dv_peakPeriod)]
+
+t
+```
+
+
+```{r plotElecImportDailyByPeriod, fig.cap="Electricity import (current year)"}
 plotDT <- elecCons_dt[, .(sum_kWh = sum(consumption),
                  mean_kWh = mean(consumption),
                  nObs = .N), keyby = .(dv_date, dv_peakPeriod, dv_weekend)]
@@ -208,6 +233,8 @@ ggplot2::ggplot(plotDT, aes(x = dv_date, y = mean_kWh,
   geom_line() +
   geom_smooth() +
   #facet_grid(dv_peakPeriod ~ .) +
+  theme(legend.position = "bottom") +
+  guides(colour = guide_legend (ncol = 3)) +
   scale_colour_viridis_d(name = "Peak period") +
   labs(x = "Date",
        y = "Mean kWh per period")
@@ -247,7 +274,7 @@ gasCons_dt <- makeDerivedVars(gasCons_dt)
 
 Note that this data starts later as we finally got the original un-registered smart meter replaced in February.
 
-Figure \@ref(fig:plotGasImport) shows half-hourly gas import ('consumption') for the current year. The power cuts are even easier to see here.
+Figure \@ref(fig:plotGasImport) shows half-hourly gas import ('consumption') for the current year. The power cuts are even easier to see here. Interestingly the pattern after the gas boiler was serviced in June is more varied. _What did he change_?
 
 ```{r plotGasImport, fig.cap="Gas consumption (current year)"}
 ggplot2::ggplot(gasCons_dt, aes(x = dv_date, y = dv_hms, fill = consumption)) +
@@ -266,6 +293,37 @@ Figure \@ref(fig:plotGasImportDaily) shows the mean daily kWh import with a smoo
 
 plotDT <- gasCons_dt[, .(sum_kWh = sum(consumption),
                  mean_kWh = mean(consumption),
+                 nObs = .N), keyby = .(dv_date, dv_weekend)]
+
+ggplot2::ggplot(plotDT, aes(x = dv_date, y = sum_kWh, 
+                            colour = dv_weekend)) +
+  geom_point() +
+  geom_smooth() +
+  theme(legend.position = "bottom") +
+  guides(colour = guide_legend (ncol = 3)) +
+  scale_colour_viridis_d(name = "Weekend") +
+  labs(x = "Date",
+       y = "Sum kWh per day")
+
+ggplot2::ggplot(plotDT, aes(x = dv_date, y = mean_kWh, 
+                            colour = dv_weekend)) +
+  geom_point() +
+  geom_smooth() +
+  theme(legend.position = "bottom") +
+  guides(colour = guide_legend (ncol = 3)) +
+  scale_colour_viridis_d(name = "Weekend") +
+  labs(x = "Date",
+       y = "Mean kWh per day")
+```
+
+Figure \@ref(fig:plotGasImportDailyByPeriod) shows the mean daily kWh import with a smoothed curve by period of the day.
+
+> To do: mark weekends etc
+
+```{r plotGasImportDailyByPeriod, fig.cap="Electricity import (current year)"}
+
+plotDT <- gasCons_dt[, .(sum_kWh = sum(consumption),
+                 mean_kWh = mean(consumption),
                  nObs = .N), keyby = .(dv_date, dv_peakPeriod, dv_weekend)]
 
 ggplot2::ggplot(plotDT, aes(x = dv_date, y = mean_kWh, 
@@ -273,6 +331,8 @@ ggplot2::ggplot(plotDT, aes(x = dv_date, y = mean_kWh,
   geom_line() +
   geom_smooth() +
   #facet_grid(dv_peakPeriod ~ .) +
+  theme(legend.position = "bottom") +
+  guides(colour = guide_legend (ncol = 3)) +
   scale_colour_viridis_d(name = "Peak period") +
   labs(x = "Date",
        y = "Mean kWh per period")
