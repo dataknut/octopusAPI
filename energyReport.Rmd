@@ -1,5 +1,5 @@
 ---
-title: "Test octopus API"
+title: "Test the octopus API and build an energy use report"
 author: "Ben Anderson"
 date: 'Last run at: `r Sys.time()`'
 output:
