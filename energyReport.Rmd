@@ -182,7 +182,7 @@ Figure \@ref(fig:plotElecImportHalfHourly) shows half-hourly electricity import 
 
 > To do: mark weekends somehow
 
-```{r plotElecImportHalfHourly, fig.cap="Electricity import (current year)"}
+```{r plotElecImportHalfHourly, fig.cap="Half hourly electricity import (current year)"}
 ggplot2::ggplot(elecCons_dt, aes(x = dv_date, y = dv_hms, fill = consumption)) +
   geom_tile() +
   theme(legend.position = "bottom") +
@@ -193,7 +193,7 @@ ggplot2::ggplot(elecCons_dt, aes(x = dv_date, y = dv_hms, fill = consumption)) +
 
 
 
-```{r plotElecImportDaily, fig.cap="Electricity import (current year)"}
+```{r plotElecImportDaily, fig.cap="Daily electricity import (current year)"}
 
 plotDT <- elecCons_dt[, .(sum_kWh = sum(consumption),
                  mean_kWh = mean(consumption),
@@ -223,7 +223,7 @@ t
 ```
 
 
-```{r plotElecImportDailyByPeriod, fig.cap="Electricity import (current year)"}
+```{r plotElecImportDailyByPeriod, fig.cap="Daily electricity import by peak period (current year)"}
 plotDT <- elecCons_dt[, .(sum_kWh = sum(consumption),
                  mean_kWh = mean(consumption),
                  nObs = .N), keyby = .(dv_date, dv_peakPeriod, dv_weekend)]
@@ -276,7 +276,7 @@ Note that this data starts later as we finally got the original un-registered sm
 
 Figure \@ref(fig:plotGasImport) shows half-hourly gas import ('consumption') for the current year. The power cuts are even easier to see here. Interestingly the pattern after the gas boiler was serviced in June is more varied. _What did he change_?
 
-```{r plotGasImport, fig.cap="Gas consumption (current year)"}
+```{r plotGasImport, fig.cap="Half-hourly gas consumption (current year)"}
 ggplot2::ggplot(gasCons_dt, aes(x = dv_date, y = dv_hms, fill = consumption)) +
   geom_tile() +
   theme(legend.position = "bottom") +
@@ -289,7 +289,7 @@ Figure \@ref(fig:plotGasImportDaily) shows the mean daily kWh import with a smoo
 
 > To do: mark weekends etc
 
-```{r plotGasImportDaily, fig.cap="Electricity import (current year)"}
+```{r plotGasImportDaily, fig.cap="Daily gas consumption (current year)"}
 
 plotDT <- gasCons_dt[, .(sum_kWh = sum(consumption),
                  mean_kWh = mean(consumption),
@@ -320,7 +320,7 @@ Figure \@ref(fig:plotGasImportDailyByPeriod) shows the mean daily kWh import wit
 
 > To do: mark weekends etc
 
-```{r plotGasImportDailyByPeriod, fig.cap="Electricity import (current year)"}
+```{r plotGasImportDailyByPeriod, fig.cap="Daily gas consumption by peak period (current year)"}
 
 plotDT <- gasCons_dt[, .(sum_kWh = sum(consumption),
                  mean_kWh = mean(consumption),
