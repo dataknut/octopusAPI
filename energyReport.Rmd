@@ -179,6 +179,26 @@ hoursAgo <- now() - maxTime
 
 The data used here is up to `r maxTime`, which is `r round(hoursAgo,1)` hours ago. In general the Octopus API seems to have data up to `midnight last night`.
 
+```{r elecTotal}
+
+
+t <- elecCons_dt[, .(nDays = uniqueN(dv_date),
+                     sumkWh = sum(consumption),
+                     halfHourly_meankWh = mean(consumption)),
+                 keyby = .(month = lubridate::month(dv_date))]
+
+makeFlexTable(t, cap = "Monthly stats")
+message("Total elec to date")
+sum(t$sumkWh)
+
+t <- elecCons_dt[, .(nDays = uniqueN(dv_date),
+                     sumkWh = sum(consumption)),
+                 keyby = .(dv_date)]
+message("Projected elec annual total")
+mean(t$sumkWh)*365
+
+```
+
 Figure \@ref(fig:plotElecImportHalfHourly) shows half-hourly electricity import ('consumption') for the current year. Spot the power cuts...
 
 > To do: mark weekends somehow
@@ -286,6 +306,26 @@ gasCons_dt <- makeDerivedVars(gasCons_dt)
 ```
 
 Note that this data starts later as we finally got the original un-registered smart meter replaced in February.
+
+```{r gasTotal}
+
+
+t <- gasCons_dt[, .(nDays = uniqueN(dv_date),
+                     sumkWh = sum(consumption),
+                     halfHourly_meankWh = mean(consumption)),
+                 keyby = .(month = lubridate::month(dv_date))]
+
+makeFlexTable(t, cap = "Monthly stats")
+message("Total gas to date")
+sum(t$sumkWh)
+
+t <- gasCons_dt[, .(nDays = uniqueN(dv_date),
+                     sumkWh = sum(consumption)),
+                 keyby = .(dv_date)]
+message("Projected gas annual total")
+mean(t$sumkWh)*365
+
+```
 
 Figure \@ref(fig:plotGasImport) shows half-hourly gas import ('consumption') for the current year. The power cuts are even easier to see here. Interestingly the pattern after the gas boiler was serviced in June is more varied. _What did he change_?
 
