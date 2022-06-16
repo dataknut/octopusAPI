@@ -27,6 +27,7 @@ library(hms)
 library(httr)
 library(jsonlite)
 library(lubridate)
+library(plotly)
 library(skimr)
 
 # parameters ----
@@ -191,7 +192,19 @@ ggplot2::ggplot(elecCons_dt, aes(x = dv_date, y = dv_hms, fill = consumption)) +
        y = "Half-hour")
 ```
 
+Repeat but with just the last 7 days of data - useful for checking recent appliance use and offspring effects.
 
+```{r plotElecImportHalfHourlyRecent, fig.cap="Half hourly electricity import (current year, last 7 days)"}
+today <- lubridate::today()
+p <- ggplot2::ggplot(elecCons_dt[dv_date >= today - 7], aes(x = dv_date, y = dv_hms, fill = consumption)) +
+  geom_tile() +
+  theme(legend.position = "bottom") +
+  scale_fill_viridis_c(name = "Electricity import (kWh)") +
+  labs(x = "Date",
+       y = "Half-hour")
+
+plotly::ggplotly(p)
+```
 
 ```{r plotElecImportDaily, fig.cap="Daily electricity import (current year)"}
 
@@ -283,6 +296,20 @@ ggplot2::ggplot(gasCons_dt, aes(x = dv_date, y = dv_hms, fill = consumption)) +
   scale_fill_viridis_c(name = "Gas import (kWh)") +
   labs(x = "Date",
        y = "Half-hour")
+```
+
+Repeat but with just the last 7 days of data - useful for checking recent appliance use and offspring effects.
+
+```{r plotGasImportHalfHourlyRecent, fig.cap="Half hourly gas import (current year, last 7 days)"}
+today <- lubridate::today()
+p <- ggplot2::ggplot(gasCons_dt[dv_date >= today - 7], aes(x = dv_date, y = dv_hms, fill = consumption)) +
+  geom_tile() +
+  theme(legend.position = "bottom") +
+  scale_fill_viridis_c(name = "Gas import (kWh)") +
+  labs(x = "Date",
+       y = "Half-hour")
+
+plotly::ggplotly(p)
 ```
 
 Figure \@ref(fig:plotGasImportDaily) shows the mean daily kWh import with a smoothed curve.
