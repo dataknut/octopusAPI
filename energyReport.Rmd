@@ -175,6 +175,9 @@ elecCons_dt <- makeDerivedVars(elecCons_dt)
 maxTime <- max(elecCons_dt$dv_start)
 
 hoursAgo <- now() - maxTime
+
+# meter is SMETS2
+elecCons_dt[, consumption_kWh := consumption] # for clarity - see https://developer.octopus.energy/docs/api/#list-consumption-for-a-meter
 ```
 
 The data used here is up to `r maxTime`, which is `r round(hoursAgo,1)` hours ago. In general the Octopus API seems to have data up to `midnight last night`.
@@ -183,8 +186,8 @@ The data used here is up to `r maxTime`, which is `r round(hoursAgo,1)` hours ag
 
 
 t <- elecCons_dt[, .(nDays = uniqueN(dv_date),
-                     sumkWh = sum(consumption),
-                     halfHourly_meankWh = mean(consumption)),
+                     sumkWh = sum(consumption_kWh),
+                     halfHourly_meankWh = mean(consumption_kWh)),
                  keyby = .(month = lubridate::month(dv_date))]
 
 makeFlexTable(t, cap = "Monthly stats")
@@ -192,7 +195,7 @@ message("Total elec to date")
 sum(t$sumkWh)
 
 t <- elecCons_dt[, .(nDays = uniqueN(dv_date),
-                     sumkWh = sum(consumption)),
+                     sumkWh = sum(consumption_kWh)),
                  keyby = .(dv_date)]
 message("Projected elec annual total")
 mean(t$sumkWh)*365
@@ -204,7 +207,7 @@ Figure \@ref(fig:plotElecImportHalfHourly) shows half-hourly electricity import 
 > To do: mark weekends somehow
 
 ```{r plotElecImportHalfHourly, fig.cap="Half hourly electricity import (current year)"}
-ggplot2::ggplot(elecCons_dt, aes(x = dv_date, y = dv_hms, fill = consumption)) +
+ggplot2::ggplot(elecCons_dt, aes(x = dv_date, y = dv_hms, fill = consumption_kWh)) +
   geom_tile() +
   theme(legend.position = "bottom") +
   scale_fill_viridis_c(name = "Electricity import (kWh)") +
@@ -216,7 +219,7 @@ Repeat but with just the last 7 days of data - useful for checking recent applia
 
 ```{r plotElecImportHalfHourlyRecent, fig.cap="Half hourly electricity import (current year, last 7 days)"}
 today <- lubridate::today()
-p <- ggplot2::ggplot(elecCons_dt[dv_date >= today - 7], aes(x = dv_date, y = dv_hms, fill = consumption)) +
+p <- ggplot2::ggplot(elecCons_dt[dv_date >= today - 7], aes(x = dv_date, y = dv_hms, fill = consumption_kWh)) +
   geom_tile() +
   theme(legend.position = "bottom") +
   scale_fill_viridis_c(name = "Electricity import (kWh)") +
@@ -228,8 +231,8 @@ plotly::ggplotly(p)
 
 ```{r plotElecImportDaily, fig.cap="Daily electricity import (current year)"}
 
-plotDT <- elecCons_dt[, .(sum_kWh = sum(consumption),
-                 mean_kWh = mean(consumption),
+plotDT <- elecCons_dt[, .(sum_kWh = sum(consumption_kWh),
+                 mean_kWh = mean(consumption_kWh),
                  nObs = .N), keyby = .(dv_date, dv_weekend)]
 
 ggplot2::ggplot(plotDT, aes(x = dv_date, y = mean_kWh, 
@@ -257,8 +260,8 @@ t
 
 
 ```{r plotElecImportDailyByPeriod, fig.cap="Daily electricity import by peak period (current year)"}
-plotDT <- elecCons_dt[, .(sum_kWh = sum(consumption),
-                 mean_kWh = mean(consumption),
+plotDT <- elecCons_dt[, .(sum_kWh = sum(consumption_kWh),
+                 mean_kWh = mean(consumption_kWh),
                  nObs = .N), keyby = .(dv_date, dv_peakPeriod, dv_weekend)]
 
 ggplot2::ggplot(plotDT, aes(x = dv_date, y = mean_kWh, 
@@ -291,6 +294,14 @@ See https://www.guylipman.com/octopus/api_guide.html#s3
 
 ## Gas Consumption
 
+We need to convert the gas consumption from m3 to kWh - see https://developer.octopus.energy/docs/api/#list-consumption-for-a-meter
+
+```{r set_gasM3TokWh}
+gasM3TokWh <- 11.36
+```
+
+We use `r gasM3TokWh` (https://www.theenergyshop.com/guides/how-to-convert-gas-units-to-kwh)
+
 ```{r getGasConsumption}
 url <- paste0("https://api.octopus.energy/v1/gas-meter-points/", 
               apiParams$gas_mpan , "/",
@@ -303,6 +314,11 @@ resp <- httr::GET(url = url, authenticate(user = apiParams$key, password = ""))
 df <- jsonlite::parse_json(resp, simplifyVector = TRUE)
 gasCons_dt <- data.table::as.data.table(df$results)
 gasCons_dt <- makeDerivedVars(gasCons_dt)
+
+# gas 'consumption' is m3 - https://developer.octopus.energy/docs/api/#list-consumption-for-a-meter
+# convert to kWh
+gasCons_dt[, consumption_m3 := consumption]
+gasCons_dt[, consumption_kWh := consumption * gasM3TokWh]
 ```
 
 Note that this data starts later as we finally got the original un-registered smart meter replaced in February.
@@ -311,8 +327,8 @@ Note that this data starts later as we finally got the original un-registered sm
 
 
 t <- gasCons_dt[, .(nDays = uniqueN(dv_date),
-                     sumkWh = sum(consumption),
-                     halfHourly_meankWh = mean(consumption)),
+                     sumkWh = sum(consumption_kWh),
+                     halfHourly_meankWh = mean(consumption_kWh)),
                  keyby = .(month = lubridate::month(dv_date))]
 
 makeFlexTable(t, cap = "Monthly stats")
@@ -320,7 +336,7 @@ message("Total gas to date")
 sum(t$sumkWh)
 
 t <- gasCons_dt[, .(nDays = uniqueN(dv_date),
-                     sumkWh = sum(consumption)),
+                     sumkWh = sum(consumption_kWh)),
                  keyby = .(dv_date)]
 message("Projected gas annual total")
 mean(t$sumkWh)*365
@@ -330,7 +346,7 @@ mean(t$sumkWh)*365
 Figure \@ref(fig:plotGasImport) shows half-hourly gas import ('consumption') for the current year. The power cuts are even easier to see here. Interestingly the pattern after the gas boiler was serviced in June is more varied. _What did he change_?
 
 ```{r plotGasImport, fig.cap="Half-hourly gas consumption (current year)"}
-ggplot2::ggplot(gasCons_dt, aes(x = dv_date, y = dv_hms, fill = consumption)) +
+ggplot2::ggplot(gasCons_dt, aes(x = dv_date, y = dv_hms, fill = consumption_kWh)) +
   geom_tile() +
   theme(legend.position = "bottom") +
   scale_fill_viridis_c(name = "Gas import (kWh)") +
@@ -342,7 +358,7 @@ Repeat but with just the last 7 days of data - useful for checking recent applia
 
 ```{r plotGasImportHalfHourlyRecent, fig.cap="Half hourly gas import (current year, last 7 days)"}
 today <- lubridate::today()
-p <- ggplot2::ggplot(gasCons_dt[dv_date >= today - 7], aes(x = dv_date, y = dv_hms, fill = consumption)) +
+p <- ggplot2::ggplot(gasCons_dt[dv_date >= today - 7], aes(x = dv_date, y = dv_hms, fill = consumption_kWh)) +
   geom_tile() +
   theme(legend.position = "bottom") +
   scale_fill_viridis_c(name = "Gas import (kWh)") +
@@ -358,8 +374,8 @@ Figure \@ref(fig:plotGasImportDaily) shows the mean daily kWh import with a smoo
 
 ```{r plotGasImportDaily, fig.cap="Daily gas consumption (current year)"}
 
-plotDT <- gasCons_dt[, .(sum_kWh = sum(consumption),
-                 mean_kWh = mean(consumption),
+plotDT <- gasCons_dt[, .(sum_kWh = sum(consumption_kWh),
+                 mean_kWh = mean(consumption_kWh),
                  nObs = .N), keyby = .(dv_date, dv_weekend)]
 
 ggplot2::ggplot(plotDT, aes(x = dv_date, y = sum_kWh, 
@@ -389,8 +405,8 @@ Figure \@ref(fig:plotGasImportDailyByPeriod) shows the mean daily kWh import wit
 
 ```{r plotGasImportDailyByPeriod, fig.cap="Daily gas consumption by peak period (current year)"}
 
-plotDT <- gasCons_dt[, .(sum_kWh = sum(consumption),
-                 mean_kWh = mean(consumption),
+plotDT <- gasCons_dt[, .(sum_kWh = sum(consumption_kWh),
+                 mean_kWh = mean(consumption_kWh),
                  nObs = .N), keyby = .(dv_date, dv_peakPeriod, dv_weekend)]
 
 ggplot2::ggplot(plotDT, aes(x = dv_date, y = mean_kWh, 
