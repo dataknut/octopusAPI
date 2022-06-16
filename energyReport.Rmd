@@ -8,7 +8,7 @@ output:
     code_folding: hide
     number_sections: yes
     toc: yes
-    toc_depth: 2
+    toc_depth: 3
     toc_float: TRUE
   bookdown::pdf_document2:
     fig_caption: yes
@@ -201,6 +201,7 @@ message("Projected elec annual total")
 mean(t$sumkWh)*365
 
 ```
+### Half-hourly analysis
 
 Figure \@ref(fig:plotElecImportHalfHourly) shows half-hourly electricity import ('consumption') for the current year. Spot the power cuts...
 
@@ -228,6 +229,7 @@ p <- ggplot2::ggplot(elecCons_dt[dv_date >= today - 7], aes(x = dv_date, y = dv_
 
 plotly::ggplotly(p)
 ```
+### Daily analysis
 
 ```{r plotElecImportDaily, fig.cap="Daily electricity import (current year)"}
 
@@ -292,6 +294,141 @@ See https://www.guylipman.com/octopus/api_guide.html#s3
 
 ```
 
+
+### Electricity emissions
+
+In theory our emissions from electricity use are zero because we are on a renewable-only tariff. But life is not so simple. We don't have a private wire to a wind turbine so the electrons we import (stick with it) are as averagely green as all the rest.
+
+We also con't avoid the 'Well To Tank' emissions and those associated with transmission losses.
+
+To further complicate things there are at least two different ways to estimate our emissions.
+
+ * use the annual BEIS emissions factor and multiply by the kWh in question - be it half-hourly, daily, annual, whatever. That's the simple way.
+ * use the NG-ESO half-hourly emissions factors which reflect the generation mix (with some caveats) of the grid at half-hourly intervals
+ 
+`Does it matter?` you cry. Well it might. If we've been able to 'flex' our usage in line with \@[theBakingForecast](https://twitter.com/baking4cast) then who knows, maybe we'll be concentrating our usage in times when the grid is actually drawing on more renewables.
+
+So let's take a look. We'll do both the BEIS-based and NG-ESO based calculations to see. For now we'll ignore the WTT and the T&D losses to keep the results comparable. We'll come back to that later.
+
+```{r setBEISelec}
+rmdParams$BEIS_elec_ci <-   0.21233 
+```
+
+For the BEIS method, we'll have to use the [2021 emissions factor](https://www.gov.uk/government/collections/government-conversion-factors-for-company-reporting) as the 2022 value is not yet available.
+
+For 2021 this is: `r rmdParams$BEIS_elec_ci` Kg CO2e/kWh
+
+For the NG-ESO method we use the NG-ESO [half-hourly carbon intensity data](https://data.nationalgrideso.com/carbon-intensity1/historic-generation-mix) that match to the half-hours in our electricity use dataset.
+
+```{r setNGESOelec}
+# this needs to be more clever - only download dates we want from API?
+
+ngeso_dt_orig <- data.table::fread("https://data.nationalgrideso.com/backend/dataset/88313ae5-94e4-4ddc-a790-593554d8c6b9/resource/f93d1835-75bc-43e5-84ad-12472b180a98/download/df_fuel_ckan.csv")
+
+ngeso_dt_orig[, dv_start := lubridate::as_datetime(DATETIME)]
+setkey(ngeso_dt_orig, dv_start)
+setkey(elecCons_dt, dv_start)
+
+elecCons_dt <- ngeso_dt_orig[, .(dv_start, CARBON_INTENSITY, LOW_CARBON_perc, RENEWABLE_perc)][elecCons_dt] # keeps match to our electricity use
+# we think renewable is wind + solar, low carbon includes nuclear
+#ggplot2::ggplot(t, aes(x = RENEWABLE_perc, y = LOW_CARBON_perc)) +
+#  geom_point()
+```
+
+Mean half-hourly carbon intensity from the NG-ESO data for the data period was `r round(mean(elecCons_dt$CARBON_INTENSITY)/1000,4)` Kg CO2e/kWh which is clearly substantially lower than the BEIS 2021 value of `r round(rmdParams$BEIS_elec_ci,4)` Kg CO2e/kWh. We would therefore expect emissions estimates using the NG-ESO factor to be much lower.
+
+Figure \@ref(fig:ngesoTile) shows the NG-ESO half-hourly carbon intensity over time for the data period as context.
+
+```{r ngesoTile, fig.cap="Half-hourly carbon intensity over time for the data period"}
+ggplot2::ggplot(elecCons_dt, aes(x = dv_date, y = dv_hms, fill = CARBON_INTENSITY)) +
+  geom_tile() +
+  scale_fill_continuous(name = "Carbon intensity", low = "green", high = "red") +
+  labs(x = "Date",
+       y = "Time of day",
+       caption = "Source: NG-ESO (https://data.nationalgrideso.com/carbon-intensity1/historic-generation-mix)")
+
+```
+
+Figure \@ref(fig:ngesoMonthly) summarises the mean half-hourly carbon intensity by month for the data period. We can clearly see that February 2022 was a very low carbon month... in fact it was a [very windy month with 3 named storms](https://www.metoffice.gov.uk/binaries/content/assets/metofficegovuk/pdf/weather/learn-about/uk-past-events/summaries/uk_monthly_climate_summary_202202a.pdf).
+
+```{r ngesoMonthly, fig.cap="Monthly mean carbon intensity for the data period by month"}
+elecCons_dt[, dv_month := lubridate::month(dv_date, label = TRUE)]
+ggplot2::ggplot(elecCons_dt, aes(x = dv_month, y = CARBON_INTENSITY)) +
+  geom_boxplot() +
+  labs(x = "Month",
+       y = "Half-hourly carbon intensity")
+
+```
+
+Figure \@ref(fig:renewableConsumption) shows half-hourly electricity kWh use vs halfhourly carbon intensity. Ideally we want a negative correlation showing that we use the most electricity when it is 'greenest' (carbon intensity is lowest). Doesn't look too good, aye?
+
+```{r renewableConsumption, fig.cap = "Half-hourly electricity kWh vs halfhourly carbon intensity"}
+ggplot2::ggplot(elecCons_dt, aes(x = CARBON_INTENSITY, y = consumption_kWh, colour = RENEWABLE_perc)) +
+  geom_point() +
+  facet_wrap(. ~ dv_peakPeriod) +
+  geom_smooth() +
+  scale_color_continuous(name = "% renewables", low = "red", high = "green") +
+  theme(legend.position = "bottom") +
+    labs(y = "Halfhourly electricity kWh")
+
+```
+
+What if we visualise using a box plot according to carbon intensity decile? So this means we divide the carbon intensity values into 10 equal groups - deciles. This is Figure \@ref(fig:halfhourlyCIbox). Doesn't look too good either - median usage (the horizontal bar in the boxes) seems to trend slightly upwards as we move to higher carbon intensity deciles.
+
+```{r halfhourlyCIbox, fig.cap="Boxing clever"}
+elecCons_dt[, CI_deciles := cut_number(CARBON_INTENSITY, n = 10)]
+
+ggplot2::ggplot(elecCons_dt, aes(x = CI_deciles, y = consumption_kWh)) +
+  geom_boxplot() +
+  labs(y = "Halfhourly electricity kWh",
+       x = "Carbon intensity decile")
+```
+
+So what if we just add up all our kWh by decile? This is Figure \@ref(fig:consSum). Nah. The bakingforecast isn't going to like us...
+
+```{r consSum, fig.cap="Sum of electricity kWh by carbon intensity decile"}
+t <- elecCons_dt[, .(sumkWh = sum(consumption_kWh),
+                     meankWh = mean(consumption_kWh)),
+                 keyby = .(CI_deciles)]
+
+ggplot2::ggplot(t, aes(x = CI_deciles, y = sumkWh)) +
+  geom_col() +
+  labs(y = "Sum kWh",
+       x = "Carbon intensity decile")
+```
+
+Out of interest, do our emissions values look very different if we apply the BEIS 2021 annual factor to our total electricity kWh to date compared to applying the NG-ESO half-hourly values?
+
+```{r compareMethods}
+elecCons_dt[, KgCO2_ngeso := consumption_kWh * (CARBON_INTENSITY/1000)] # convert to kg
+t <- elecCons_dt[, .(sumkWh = sum(consumption_kWh),
+                     sumKgCO2_ngeso = sum(KgCO2_ngeso))]
+
+t[, sumKgCO2_beis :=  sumkWh * rmdParams$BEIS_elec_ci]
+
+makeFlexTable(t, cap = "Comparing emissions estimation methods using electricity kWh to date")
+
+t <- elecCons_dt[, .(sumkWh = sum(consumption_kWh),
+                     sumKgCO2_ngeso = sum(KgCO2_ngeso)),
+                 keyby = .(dv_month)]
+
+t[, sumKgCO2_beis :=  sumkWh * rmdParams$BEIS_elec_ci]
+
+plotDT <- melt(t, id.vars = "dv_month")
+
+ggplot2::ggplot(plotDT[ variable != "sumkWh",], aes(x = dv_month, y = value, fill = variable)) +
+  geom_col(position = "dodge") +
+  scale_color_discrete(name = "Method") +
+  labs(y = "Kg CO2",
+       x = "Month")
+
+
+```
+
+As we'd expect from the comparison of the values above, Table \@ref(tab:compareMethods) suggests that it does. In fact our 'in use' NG-ESO based emissions are `r round(100*(t$sumKgCO2_ngeso/t$sumKgCO2_beis),2)` % of our BEIS-based emissions depending on the month in question.
+
+If we compare the monthly values we can see the biggest difference was in February, a month we have already identified as being more 'low carbon' (see Figure \@ref(fig:ngesoMonthly)).
+
 ## Gas Consumption
 
 We need to convert the gas consumption from m3 to kWh - see https://developer.octopus.energy/docs/api/#list-consumption-for-a-meter
@@ -300,7 +437,7 @@ We need to convert the gas consumption from m3 to kWh - see https://developer.oc
 gasM3TokWh <- 11.36
 ```
 
-We use `r gasM3TokWh` (https://www.theenergyshop.com/guides/how-to-convert-gas-units-to-kwh)
+We use a multiplier of `r gasM3TokWh` kWh/m3 (https://www.theenergyshop.com/guides/how-to-convert-gas-units-to-kwh)
 
 ```{r getGasConsumption}
 url <- paste0("https://api.octopus.energy/v1/gas-meter-points/", 
@@ -343,6 +480,8 @@ mean(t$sumkWh)*365
 
 ```
 
+### Half-hourly anlaysis
+
 Figure \@ref(fig:plotGasImport) shows half-hourly gas import ('consumption') for the current year. The power cuts are even easier to see here. Interestingly the pattern after the gas boiler was serviced in June is more varied. _What did he change_?
 
 ```{r plotGasImport, fig.cap="Half-hourly gas consumption (current year)"}
@@ -368,6 +507,8 @@ p <- ggplot2::ggplot(gasCons_dt[dv_date >= today - 7], aes(x = dv_date, y = dv_h
 plotly::ggplotly(p)
 ```
 
+### Daily analysis
+
 Figure \@ref(fig:plotGasImportDaily) shows the mean daily kWh import with a smoothed curve.
 
 > To do: mark weekends etc
@@ -387,7 +528,11 @@ ggplot2::ggplot(plotDT, aes(x = dv_date, y = sum_kWh,
   scale_colour_viridis_d(name = "Weekend") +
   labs(x = "Date",
        y = "Sum kWh per day")
+```
 
+Repeat for mean
+
+```{r plotGasImportDailyMean}
 ggplot2::ggplot(plotDT, aes(x = dv_date, y = mean_kWh, 
                             colour = dv_weekend)) +
   geom_point() +
@@ -420,6 +565,27 @@ ggplot2::ggplot(plotDT, aes(x = dv_date, y = mean_kWh,
   labs(x = "Date",
        y = "Mean kWh per period")
 ```
+
+### Gas emissions
+
+This is much more simple. We can only apply the BEIS 2021 value as there are no time-varying emissions factors for gas.
+
+```{r setBEISgas}
+rmdParams$BEIS_gas_ci <- 0.20297 
+```
+
+As before, for the BEIS method we'll have to use the [2021 emissions factor](https://www.gov.uk/government/collections/government-conversion-factors-for-company-reporting) as the 2022 value is not yet available.
+
+For 2021 this is: `r rmdParams$BEIS_gas_ci` Kg CO2e/kWh
+
+```{r gasEmissionsTotal}
+gasCons_dt[, KgCO2_beis := consumption_kWh * rmdParams$BEIS_gas_ci] 
+t <- gasCons_dt[, .(sumkWh = sum(consumption_kWh),
+                     sumKgCO2_beis = sum(KgCO2_beis))]
+
+makeFlexTable(t, cap = "Emissions estimation using gas kWh to date")
+```
+
 
 # Annexes
 ## Data descriptions
