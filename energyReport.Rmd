@@ -96,6 +96,12 @@ and using
 
 https://developer.octopus.energy/docs/api/#
 
+# Code
+
+More at: https://dataknut.github.io/octopusAPI/
+
+Code at: https://github.com/dataknut/octopusAPI
+
 # Test without authentication
 
 ```{r getBasic}
