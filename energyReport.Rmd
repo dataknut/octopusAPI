@@ -20,15 +20,19 @@ output:
 knitr::opts_chunk$set(echo = TRUE)
 
 # libraries ----
-library(data.table)
-library(flextable)
-library(ggplot2)
-library(hms)
-library(httr)
-library(jsonlite)
-library(lubridate)
-library(plotly)
-library(skimr)
+
+library(dkUtils) # find me at https://github.com/dataknut/dkUtils
+
+rmdLibs <- c("data.table",
+             "flextable",
+             "ggplot2",
+             "hms",
+             "httr",
+             "jsonlite",
+             "lubridate",
+             "plotly",
+             "skimr")
+dkUtils::loadLibraries(rmdLibs)
 
 # parameters ----
 source("~/octopusAPI_key.R") # api params
@@ -40,10 +44,10 @@ message("Test if rmdParams$odPath (", rmdParams$odPath, ") exists...")
 dir.exists(path.expand(rmdParams$odPath))
 
 # Functions ----
-makeFlexTable <- function(df, cap = "caption"){
+makeFlexTable <- function(df, cap = "caption", digits = 0){
   # makes a pretty flextable - see https://cran.r-project.org/web/packages/flextable/index.html
   ft <- flextable::flextable(df)
-  ft <- colformat_double(ft, digits = 1)
+  ft <- colformat_double(ft, digits = digits)
   ft <- fontsize(ft, size = 9)
   ft <- fontsize(ft, size = 10, part = "header")
   ft <- set_caption(ft, caption = cap)
@@ -189,14 +193,14 @@ elecCons_dt[, consumption_kWh := consumption] # for clarity - see https://develo
 The data used here is up to `r maxTime`, which is `r round(hoursAgo,1)` hours ago. In general the Octopus API seems to have data up to `midnight last night`.
 
 ```{r elecTotal}
-
-
 t <- elecCons_dt[, .(nDays = uniqueN(dv_date),
                      sumkWh = sum(consumption_kWh),
-                     halfHourly_meankWh = mean(consumption_kWh)),
+                     hh_meankWh = mean(consumption_kWh),
+                     hh_minkWh = min(consumption_kWh),
+                     hh_maxkWh = max(consumption_kWh)),
                  keyby = .(month = lubridate::month(dv_date))]
 
-makeFlexTable(t, cap = "Monthly stats")
+makeFlexTable(t, cap = "Monthly stats", digits = 2)
 message("Total elec to date")
 sum(t$sumkWh)
 
@@ -204,9 +208,18 @@ t <- elecCons_dt[, .(nDays = uniqueN(dv_date),
                      sumkWh = sum(consumption_kWh)),
                  keyby = .(dv_date)]
 message("Projected elec annual total")
-mean(t$sumkWh)*365
-
+annualTotal <- mean(t$sumkWh)*365
+annualTotal
+message("Projected elec annual cost @ 24p - including standing charge")
+elec_kWh <- 0.24
+annualCost <- (annualTotal*elec_kWh)+(365*0.2401)
+annualCost
+message("Projected mean elec monthly cost @ 24p - including standing charge")
+annualCost/12
 ```
+
+> TO DO: fix £ analysis to use tariff from API
+
 ### Half-hourly analysis
 
 Figure \@ref(fig:plotElecImportHalfHourly) shows half-hourly electricity import ('consumption') for the current year. Spot the power cuts...
@@ -235,6 +248,7 @@ p <- ggplot2::ggplot(elecCons_dt[dv_date >= today - 7], aes(x = dv_date, y = dv_
 
 plotly::ggplotly(p)
 ```
+
 ### Daily analysis
 
 ```{r plotElecImportDaily, fig.cap="Daily electricity import (current year)"}
@@ -284,7 +298,47 @@ ggplot2::ggplot(plotDT, aes(x = dv_date, y = mean_kWh,
        y = "Mean kWh per period")
 ```
 
-### Export
+### PV generation
+
+Not Octopus data - irregular reads by us. Load from .xslsx
+
+Figure \@ref(fig:getPVgen) compares our PV generation with overall grid import. These are mean values. We are occasionally exporting (Table \@ref(tab:elecTotal) has zeros) but we do not (currently) have access to the export data.
+
+```{r getPVgen, fig.cap="Compare grid import and PV gen"}
+library(openxlsx)
+f <- "~/Dropbox/Home/houses/whiteHorseMews/2WhiteHorseMewsRunningCosts.xlsx"
+pvGen <- openxlsx::read.xlsx(f,
+                             sheet = "PV",
+                             detectDates = TRUE)
+pvGen_DT <- data.table::as.data.table(pvGen)
+pvGen_DT[, meankWhGen := diff/n.days]
+pvGen_DT[, dv_date := lubridate::as_datetime(Date)]
+pvGen_DT[, month := lubridate::month(dv_date)]
+
+monthlyPvGen_DT <- pvGen_DT[, .(hh_meankWh = mean(meankWhGen)/48 # input value is mean per day
+                                   ),
+                              keyby = .(month = lubridate::month(dv_date),
+                                        year = lubridate::year(dv_date))
+                              ]
+monthlyPvGen_DT[, value := "PV generation"]
+
+monthlyElec_DT <- elecCons_dt[, .(hh_meankWh = mean(consumption_kWh)),
+                              keyby = .(month = lubridate::month(dv_date),
+                                        year = lubridate::year(dv_date))]
+monthlyElec_DT[, value := "Grid import"]
+
+plotDT <- rbind(monthlyPvGen_DT, monthlyElec_DT)
+
+ggplot2::ggplot(plotDT, aes(x = month, y = hh_meankWh, 
+                            colour = value)) +
+  geom_line()+
+  scale_color_discrete(name = "Type")+
+  facet_grid(year ~ .)
+```
+
+> To do: model value of PV gen if we were to use all of it. 
+
+### PV Export
 
 This will be a new MPAN but specified as export - although the url will still say `consumption`. We do not have this even though the PV is exporting on (some) days.
 
@@ -326,24 +380,56 @@ For 2021 this is: `r rmdParams$BEIS_elec_ci` Kg CO2e/kWh
 
 For the NG-ESO method we use the NG-ESO [half-hourly carbon intensity data](https://data.nationalgrideso.com/carbon-intensity1/historic-generation-mix) that match to the half-hours in our electricity use dataset.
 
+We save this locally, if it is older than 1 day we re-download.
+
 ```{r setNGESOelec}
 # this needs to be more clever - only download dates we want from API?
+esoF <- here::here("data", "latest_df_fuel_ckan.csv")
+if(file.exists(paste0(esoF, ".gz"))){
+  message("We already have a version saved to: ", paste0(esoF, ".gz"))
+  message("Loading it...")
+  ngeso_dt_orig <- data.table::fread(paste0(esoF, ".gz"))
+} else {
+  message("We don't already have a version, downloading and saving to: ", esoF)
+  ngeso_dt_orig <- data.table::fread("https://data.nationalgrideso.com/backend/dataset/88313ae5-94e4-4ddc-a790-593554d8c6b9/resource/f93d1835-75bc-43e5-84ad-12472b180a98/download/df_fuel_ckan.csv")
+  # nice dateTime
+  ngeso_dt_orig[, dv_start := lubridate::as_datetime(DATETIME)]
+  data.table::fwrite(ngeso_dt_orig, esoF)
+  dkUtils::gzipIt(esoF)
+  data.table::fwrite(ngeso_dt_orig, "~/Dropbox/data/UK_NGESO/genMix/latest_df_fuel_ckan.csv") # save locally for future re-use
+  dkUtils::gzipIt("~/Dropbox/data/UK_NGESO/genMix/latest_df_fuel_ckan.csv")
+}
 
-ngeso_dt_orig <- data.table::fread("https://data.nationalgrideso.com/backend/dataset/88313ae5-94e4-4ddc-a790-593554d8c6b9/resource/f93d1835-75bc-43e5-84ad-12472b180a98/download/df_fuel_ckan.csv")
+# if older than 1 day, reload
+today <- lubridate::today()
+lastNGESO <- as.Date(max(ngeso_dt_orig$dv_start))
 
-ngeso_dt_orig[, dv_start := lubridate::as_datetime(DATETIME)]
+if(today - lastNGESO > 1) {
+  # old data, reload
+  message("But the version we have dates from ", lastNGESO, " (",today - lastNGESO ," days ago), downloading latest...")
+  ngeso_dt_orig <- data.table::fread("https://data.nationalgrideso.com/backend/dataset/88313ae5-94e4-4ddc-a790-593554d8c6b9/resource/f93d1835-75bc-43e5-84ad-12472b180a98/download/df_fuel_ckan.csv")
+  # nice dateTime
+  ngeso_dt_orig[, dv_start := lubridate::as_datetime(DATETIME)]
+  data.table::fwrite(ngeso_dt_orig, esoF)
+  dkUtils::gzipIt(esoF)
+}
+
+
+# merge to usage data
 setkey(ngeso_dt_orig, dv_start)
 setkey(elecCons_dt, dv_start)
-
 elecCons_dt <- ngeso_dt_orig[, .(dv_start, CARBON_INTENSITY, LOW_CARBON_perc, RENEWABLE_perc)][elecCons_dt] # keeps match to our electricity use
+
+# there will be NAs if some datetimes are missing from ngeso_dt_orig
+
 # we think renewable is wind + solar, low carbon includes nuclear
 #ggplot2::ggplot(t, aes(x = RENEWABLE_perc, y = LOW_CARBON_perc)) +
 #  geom_point()
 ```
 
-Mean half-hourly carbon intensity from the NG-ESO data for the data period was `r round(mean(elecCons_dt$CARBON_INTENSITY)/1000,4)` Kg CO2e/kWh which is clearly substantially lower than the BEIS 2021 value of `r round(rmdParams$BEIS_elec_ci,4)` Kg CO2e/kWh. We would therefore expect emissions estimates using the NG-ESO factor to be much lower.
+Mean half-hourly carbon intensity from the NG-ESO data for the data period was `r round(mean(elecCons_dt$CARBON_INTENSITY, na.rm = TRUE)/1000,4)` Kg CO2e/kWh. If this is substantially different to  the BEIS 2021 value of `r round(rmdParams$BEIS_elec_ci,4)` Kg CO2e/kWh, we would  expect emissions estimates using the NG-ESO factor to differ.
 
-Figure \@ref(fig:ngesoTile) shows the NG-ESO half-hourly carbon intensity over time for the data period as context.
+Figure \@ref(fig:ngesoTile) shows the NG-ESO half-hourly carbon intensity over time for the data period as context. 
 
 ```{r ngesoTile, fig.cap="Half-hourly carbon intensity over time for the data period"}
 ggplot2::ggplot(elecCons_dt, aes(x = dv_date, y = dv_hms, fill = CARBON_INTENSITY)) +
@@ -360,9 +446,12 @@ Figure \@ref(fig:ngesoMonthly) summarises the mean half-hourly carbon intensity 
 ```{r ngesoMonthly, fig.cap="Monthly mean carbon intensity for the data period by month"}
 elecCons_dt[, dv_month := lubridate::month(dv_date, label = TRUE)]
 ggplot2::ggplot(elecCons_dt, aes(x = dv_month, y = CARBON_INTENSITY)) +
-  geom_boxplot() +
+  geom_violin(draw_quantiles = c(0.5)) +
+  #geom_jitter() +
+  #geom_boxplot() +
   labs(x = "Month",
-       y = "Half-hourly carbon intensity")
+       y = "Half-hourly carbon intensity",
+       caption = "Median drawn")
 
 ```
 
@@ -382,6 +471,7 @@ ggplot2::ggplot(elecCons_dt, aes(x = CARBON_INTENSITY, y = consumption_kWh, colo
 What if we visualise using a box plot according to carbon intensity decile? So this means we divide the carbon intensity values into 10 equal groups - deciles. This is Figure \@ref(fig:halfhourlyCIbox). Doesn't look too good either - median usage (the horizontal bar in the boxes) seems to trend slightly upwards as we move to higher carbon intensity deciles.
 
 ```{r halfhourlyCIbox, fig.cap="Boxing clever"}
+# this will generate NAs if the CI data is missing for some of the (most recent) dateTimes 
 elecCons_dt[, CI_deciles := cut_number(CARBON_INTENSITY, n = 10)]
 
 ggplot2::ggplot(elecCons_dt, aes(x = CI_deciles, y = consumption_kWh)) +
@@ -393,8 +483,8 @@ ggplot2::ggplot(elecCons_dt, aes(x = CI_deciles, y = consumption_kWh)) +
 So what if we just add up all our kWh by decile? This is Figure \@ref(fig:consSum). Nah. The bakingforecast isn't going to like us...
 
 ```{r consSum, fig.cap="Sum of electricity kWh by carbon intensity decile"}
-t <- elecCons_dt[, .(sumkWh = sum(consumption_kWh),
-                     meankWh = mean(consumption_kWh)),
+t <- elecCons_dt[, .(sumkWh = sum(consumption_kWh, na.rm = TRUE),
+                     meankWh = mean(consumption_kWh, na.rm = TRUE)),
                  keyby = .(CI_deciles)]
 
 ggplot2::ggplot(t, aes(x = CI_deciles, y = sumkWh)) +
@@ -408,14 +498,14 @@ Out of interest, do our emissions values look very different if we apply the BEI
 ```{r compareMethods}
 elecCons_dt[, KgCO2_ngeso := consumption_kWh * (CARBON_INTENSITY/1000)] # convert to kg
 t <- elecCons_dt[, .(sumkWh = sum(consumption_kWh),
-                     sumKgCO2_ngeso = sum(KgCO2_ngeso))]
+                     sumKgCO2_ngeso = sum(KgCO2_ngeso, na.rm = TRUE))]
 
 t[, sumKgCO2_beis :=  sumkWh * rmdParams$BEIS_elec_ci]
 
 makeFlexTable(t, cap = "Comparing emissions estimation methods using electricity kWh to date")
 
 t <- elecCons_dt[, .(sumkWh = sum(consumption_kWh),
-                     sumKgCO2_ngeso = sum(KgCO2_ngeso)),
+                     sumKgCO2_ngeso = sum(KgCO2_ngeso, na.rm = TRUE)),
                  keyby = .(dv_month)]
 
 t[, sumKgCO2_beis :=  sumkWh * rmdParams$BEIS_elec_ci]
@@ -481,9 +571,16 @@ sum(t$sumkWh)
 t <- gasCons_dt[, .(nDays = uniqueN(dv_date),
                      sumkWh = sum(consumption_kWh)),
                  keyby = .(dv_date)]
-message("Projected gas annual total")
-mean(t$sumkWh)*365
 
+message("Projected gas annual total")
+annualTotal <- mean(t$sumkWh)*365
+annualTotal
+message("Projected gas annual cost @ 7p - including standing charge")
+gas_kWh <- 0.0719
+annualCost <- (annualTotal*gas_kWh)+(365*.261)
+annualCost
+message("Projected mean gas monthly cost @ 7p - including standing charge")
+annualCost/12
 ```
 
 ### Half-hourly anlaysis
