@@ -35,7 +35,7 @@ rmdLibs <- c("data.table",
 dkUtils::loadLibraries(rmdLibs)
 
 # parameters ----
-source("~/octopusAPI_key.R") # api params
+source("~/Dropbox/api/octopusAPI_key.R") # api params
 # DO NOT PRINT THE KEY!
 
 rmdParams <- list() # params for this report
@@ -138,7 +138,7 @@ makeFlexTable(head(props[, .(town, county,
 
 ```
 
-List the electricity meter points.
+List the electricity meters by MPAN. There should be only one...
 
 ```{r listElec}
 # this is a list of n mpans
@@ -150,6 +150,7 @@ for(n in 1:length(df$properties$electricity_meter_points)){
 
 ```
 
+List the gas meters by MPRN. There should be only one...
 
 ```{r listGas}
 length(df$properties$gas_meter_points)
@@ -164,6 +165,8 @@ for(n in 1:length(df$properties$gas_meter_points)){
 ### Consumption
 
 See: https://www.guylipman.com/octopus/api_guide.html#s3
+
+Start data extraction from 1st Jan 2022 as we had smart meter (re)installed in January.
 
 ```{r getElecConsumption}
 url <- paste0("https://api.octopus.energy/v1/electricity-meter-points/", 
@@ -210,15 +213,19 @@ t <- elecCons_dt[, .(nDays = uniqueN(dv_date),
 message("Projected elec annual total")
 annualTotal <- mean(t$sumkWh)*365
 annualTotal
-message("Projected elec annual cost @ 24p - including standing charge")
+message("Projected annual elec cost @ 24p - including standing charge")
 elec_kWh <- 0.24
 annualCost <- (annualTotal*elec_kWh)+(365*0.2401)
 annualCost
-message("Projected mean elec monthly cost @ 24p - including standing charge")
+message("Projected mean monthly elec cost @ 24p - including standing charge")
 annualCost/12
 ```
 
 > TO DO: fix £ analysis to use tariff from API
+
+URL will be something like
+
+https://api.octopus.energy/v1/products/LOYAL-FIX-12M-21-10-07/electricity-tariffs/E-1R-LOYAL-FIX-12M-21-10-07-A/standard-unit-rates/
 
 ### Half-hourly analysis
 
