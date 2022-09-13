@@ -210,14 +210,26 @@ sum(t$sumkWh)
 t <- elecCons_dt[, .(nDays = uniqueN(dv_date),
                      sumkWh = sum(consumption_kWh)),
                  keyby = .(dv_date)]
-message("Projected elec annual total")
+message("########")
+elec_kWh <- 0.24
+message("Projected elec annual total @ ", elec_kWh,"p")
 annualTotal <- mean(t$sumkWh)*365
 annualTotal
-message("Projected annual elec cost @ 24p - including standing charge")
-elec_kWh <- 0.24
-annualCost <- (annualTotal*elec_kWh)+(365*0.2401)
+message("Projected annual elec cost @ ", elec_kWh,"p - including standing charge")
+annualCost <- (annualTotal*elec_kWh)+(365*0.2401) # standing charge
 annualCost
-message("Projected mean monthly elec cost @ 24p - including standing charge")
+message("Projected mean monthly elec cost @ ", elec_kWh,"p - including standing charge")
+annualCost/12
+
+message("########")
+elec_kWh <- 0.34
+message("Projected elec annual total @ ", elec_kWh,"p")
+annualTotal <- mean(t$sumkWh)*365
+annualTotal
+message("Projected annual elec cost @ ", elec_kWh,"p - including standing charge")
+annualCost <- (annualTotal*elec_kWh)+(365*0.2401) # standing charge
+annualCost
+message("Projected mean monthly elec cost @ ", elec_kWh,"p - including standing charge")
 annualCost/12
 ```
 
@@ -246,7 +258,8 @@ Repeat but with just the last 7 days of data - useful for checking recent applia
 
 ```{r plotElecImportHalfHourlyRecent, fig.cap="Half hourly electricity import (current year, last 7 days)"}
 today <- lubridate::today()
-p <- ggplot2::ggplot(elecCons_dt[dv_date >= today - 7], aes(x = dv_date, y = dv_hms, fill = consumption_kWh)) +
+plotDT <- elecCons_dt[dv_date >= today - 7]
+p <- ggplot2::ggplot(plotDT, aes(x = dv_date, y = dv_hms, fill = consumption_kWh)) +
   geom_tile() +
   theme(legend.position = "bottom") +
   scale_fill_viridis_c(name = "Electricity import (kWh)") +
@@ -254,6 +267,16 @@ p <- ggplot2::ggplot(elecCons_dt[dv_date >= today - 7], aes(x = dv_date, y = dv_
        y = "Half-hour")
 
 plotly::ggplotly(p)
+
+plotDT[, dow := lubridate::wday(dv_date, label = TRUE)]
+recent_dt <- plotDT[, .(sum_kWh_elec = sum(consumption_kWh)), keyby = .(dv_date, dow, dv_peakPeriod)]
+daily_totals <- plotDT[, .(Total = sum(consumption_kWh)), keyby = .(dv_date, dow)]
+
+t <- dcast(recent_dt, dv_date + dow ~ dv_peakPeriod, val.var = sum_kWh_elec)
+# add totals
+t <- t[daily_totals]
+makeFlexTable(t, digits = 2,
+              cap = "Recent electricity use")
 ```
 
 ### Daily analysis
@@ -436,21 +459,9 @@ elecCons_dt <- ngeso_dt_orig[, .(dv_start, CARBON_INTENSITY, LOW_CARBON_perc, RE
 
 Mean half-hourly carbon intensity from the NG-ESO data for the data period was `r round(mean(elecCons_dt$CARBON_INTENSITY, na.rm = TRUE)/1000,4)` Kg CO2e/kWh. If this is substantially different to  the BEIS 2021 value of `r round(rmdParams$BEIS_elec_ci,4)` Kg CO2e/kWh, we would  expect emissions estimates using the NG-ESO factor to differ.
 
-Figure \@ref(fig:ngesoTile) shows the NG-ESO half-hourly carbon intensity over time for the data period as context. 
+For context, Figure \@ref(fig:ngesoMonthly) summarises the mean half-hourly carbon intensity by month for the data period. We can clearly see that February 2022 was a very low carbon month... in fact it was a [very windy month with 3 named storms](https://www.metoffice.gov.uk/binaries/content/assets/metofficegovuk/pdf/weather/learn-about/uk-past-events/summaries/uk_monthly_climate_summary_202202a.pdf).
 
-```{r ngesoTile, fig.cap="Half-hourly carbon intensity over time for the data period"}
-ggplot2::ggplot(elecCons_dt, aes(x = dv_date, y = dv_hms, fill = CARBON_INTENSITY)) +
-  geom_tile() +
-  scale_fill_continuous(name = "Carbon intensity", low = "green", high = "red") +
-  labs(x = "Date",
-       y = "Time of day",
-       caption = "Source: NG-ESO (https://data.nationalgrideso.com/carbon-intensity1/historic-generation-mix)")
-
-```
-
-Figure \@ref(fig:ngesoMonthly) summarises the mean half-hourly carbon intensity by month for the data period. We can clearly see that February 2022 was a very low carbon month... in fact it was a [very windy month with 3 named storms](https://www.metoffice.gov.uk/binaries/content/assets/metofficegovuk/pdf/weather/learn-about/uk-past-events/summaries/uk_monthly_climate_summary_202202a.pdf).
-
-```{r ngesoMonthly, fig.cap="Monthly mean carbon intensity for the data period by month"}
+```{r ngesoMonthly, fig.cap="Monthly mean carbon intensity for the data period by month (NG-ESO data)"}
 elecCons_dt[, dv_month := lubridate::month(dv_date, label = TRUE)]
 ggplot2::ggplot(elecCons_dt, aes(x = dv_month, y = CARBON_INTENSITY)) +
   geom_violin(draw_quantiles = c(0.5)) +
@@ -462,9 +473,9 @@ ggplot2::ggplot(elecCons_dt, aes(x = dv_month, y = CARBON_INTENSITY)) +
 
 ```
 
-Figure \@ref(fig:renewableConsumption) shows half-hourly electricity kWh use vs halfhourly carbon intensity. Ideally we want a negative correlation showing that we use the most electricity when it is 'greenest' (carbon intensity is lowest). Doesn't look too good, aye?
+Figure \@ref(fig:renewableConsumption) shows our half-hourly electricity kWh use vs halfhourly carbon intensity. Ideally we want a negative correlation showing that we use the most electricity when it is 'greenest' (carbon intensity is lowest). Doesn't look too good, aye?
 
-```{r renewableConsumption, fig.cap = "Half-hourly electricity kWh vs halfhourly carbon intensity"}
+```{r renewableConsumption, fig.cap = "Own half-hourly electricity kWh vs NG-ESO halfhourly carbon intensity"}
 ggplot2::ggplot(elecCons_dt, aes(x = CARBON_INTENSITY, y = consumption_kWh, colour = RENEWABLE_perc)) +
   geom_point() +
   facet_wrap(. ~ dv_peakPeriod) +
@@ -475,7 +486,7 @@ ggplot2::ggplot(elecCons_dt, aes(x = CARBON_INTENSITY, y = consumption_kWh, colo
 
 ```
 
-What if we visualise using a box plot according to carbon intensity decile? So this means we divide the carbon intensity values into 10 equal groups - deciles. This is Figure \@ref(fig:halfhourlyCIbox). Doesn't look too good either - median usage (the horizontal bar in the boxes) seems to trend slightly upwards as we move to higher carbon intensity deciles.
+What if we visualise using a box plot according to carbon intensity decile? So this means we divide the carbon intensity values into 10 equal groups - deciles. This is Figure \@ref(fig:halfhourlyCIbox). Doesn't look too good either - our median usage (the horizontal bar in the boxes) seems to trend slightly upwards as we move to higher carbon intensity deciles.
 
 ```{r halfhourlyCIbox, fig.cap="Boxing clever"}
 # this will generate NAs if the CI data is missing for some of the (most recent) dateTimes 
@@ -487,7 +498,7 @@ ggplot2::ggplot(elecCons_dt, aes(x = CI_deciles, y = consumption_kWh)) +
        x = "Carbon intensity decile")
 ```
 
-So what if we just add up all our kWh by decile? This is Figure \@ref(fig:consSum). Nah. The bakingforecast isn't going to like us...
+So what if we just add up all our electricity kWh by carbon intensity decile? Do we use more low carbon kWh? This is Figure \@ref(fig:consSum). Nah. The bakingforecast isn't going to like us...
 
 ```{r consSum, fig.cap="Sum of electricity kWh by carbon intensity decile"}
 t <- elecCons_dt[, .(sumkWh = sum(consumption_kWh, na.rm = TRUE),
@@ -579,14 +590,26 @@ t <- gasCons_dt[, .(nDays = uniqueN(dv_date),
                      sumkWh = sum(consumption_kWh)),
                  keyby = .(dv_date)]
 
-message("Projected gas annual total")
+message("########")
+gas_kWh <- 0.0719
+message("Projected gas annual total @ ", gas_kWh,"p")
 annualTotal <- mean(t$sumkWh)*365
 annualTotal
-message("Projected gas annual cost @ 7p - including standing charge")
-gas_kWh <- 0.0719
-annualCost <- (annualTotal*gas_kWh)+(365*.261)
+message("Projected annual gas cost @ ", gas_kWh,"p - including standing charge")
+annualCost <- (annualTotal*gas_kWh)+(365*0.261) # standing charge
 annualCost
-message("Projected mean gas monthly cost @ 7p - including standing charge")
+message("Projected mean monthly gas cost @ ", gas_kWh,"p - including standing charge")
+annualCost/12
+
+message("########")
+gas_kWh <- 0.103
+message("Projected gas annual total @ ", gas_kWh,"p")
+annualTotal <- mean(t$sumkWh)*365
+annualTotal
+message("Projected annual gas cost @ ", gas_kWh,"p - including standing charge")
+annualCost <- (annualTotal*gas_kWh)+(365*0.261) # standing charge
+annualCost
+message("Projected mean monthly gas cost @ ", gas_kWh,"p - including standing charge")
 annualCost/12
 ```
 
@@ -607,7 +630,8 @@ Repeat but with just the last 7 days of data - useful for checking recent applia
 
 ```{r plotGasImportHalfHourlyRecent, fig.cap="Half hourly gas import (current year, last 7 days)"}
 today <- lubridate::today()
-p <- ggplot2::ggplot(gasCons_dt[dv_date >= today - 7], aes(x = dv_date, y = dv_hms, fill = consumption_kWh)) +
+plotDT <- gasCons_dt[dv_date >= today - 7]
+p <- ggplot2::ggplot(plotDT, aes(x = dv_date, y = dv_hms, fill = consumption_kWh)) +
   geom_tile() +
   theme(legend.position = "bottom") +
   scale_fill_viridis_c(name = "Gas import (kWh)") +
@@ -615,6 +639,16 @@ p <- ggplot2::ggplot(gasCons_dt[dv_date >= today - 7], aes(x = dv_date, y = dv_h
        y = "Half-hour")
 
 plotly::ggplotly(p)
+
+plotDT[, dow := lubridate::wday(dv_date, label = TRUE)]
+recent_dt <- plotDT[, .(sum_kWh_elec = sum(consumption_kWh)), keyby = .(dv_date, dow, dv_peakPeriod)]
+daily_totals <- plotDT[, .(Total = sum(consumption_kWh)), keyby = .(dv_date, dow)]
+
+t <- dcast(recent_dt, dv_date + dow ~ dv_peakPeriod, val.var = sum_kWh_elec)
+# add totals
+t <- t[daily_totals]
+makeFlexTable(t, digits = 2,
+              cap = "Recent gas use")
 ```
 
 ### Daily analysis
@@ -713,6 +747,21 @@ Use `skmir::skim()`to summarise.
 
 ```{r skimGasCons}
 skimr::skim(gasCons_dt)
+```
+
+
+### NG-ESO data
+
+Figure \@ref(fig:ngesoTile) shows the NG-ESO half-hourly carbon intensity over time for the data period as context. 
+
+```{r ngesoTile, fig.cap="Half-hourly carbon intensity over time for the data period"}
+ggplot2::ggplot(elecCons_dt, aes(x = dv_date, y = dv_hms, fill = CARBON_INTENSITY)) +
+  geom_tile() +
+  scale_fill_continuous(name = "Carbon intensity", low = "green", high = "red") +
+  labs(x = "Date",
+       y = "Time of day",
+       caption = "Source: NG-ESO (https://data.nationalgrideso.com/carbon-intensity1/historic-generation-mix)")
+
 ```
 
 
