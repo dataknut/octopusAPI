@@ -108,6 +108,8 @@ Code at: https://github.com/dataknut/octopusAPI
 
 # Test without authentication
 
+Check the response code. This seems to generate errors (sometimes).
+
 ```{r getBasic}
 # test
 url <- "https://api.octopus.energy/v1/products"
@@ -116,8 +118,8 @@ resp <- httr::GET(url)
 
 message("Status code: ", resp$status_code)
 
-df <- jsonlite::parse_json(resp, simplifyVector = TRUE)
-makeFlexTable(head(df$results), cap = "Example products list (first 6 rows)")
+# df <- jsonlite::parse_json(resp, simplifyVector = TRUE)
+# makeFlexTable(head(df$results), cap = "Example products list (first 6 rows)")
 ```
 
 # Tests with authentication
