@@ -170,6 +170,8 @@ See: https://www.guylipman.com/octopus/api_guide.html#s3
 
 Start data extraction from 1st Jan 2022 as we had smart meter (re)installed in January.
 
+> Check missing dates and adjust "&page_size=100000" if required
+
 ```{r getElecConsumption}
 url <- paste0("https://api.octopus.energy/v1/electricity-meter-points/", 
               apiParams$elec_import_mpan , "/",
@@ -177,7 +179,7 @@ url <- paste0("https://api.octopus.energy/v1/electricity-meter-points/",
               apiParams$elec_import_serial, "/",
               "consumption/",
               "?period_from=2022-01-01T00:00Z",
-              "&page_size=10000")
+              "&page_size=100000") # make sure this is large enough!
 # get data via httr ----
 resp <- httr::GET(url = url, authenticate(user = apiParams$key, password = ""))
 df <- jsonlite::parse_json(resp, simplifyVector = TRUE) # creates a df of which 'results' = the data
@@ -193,9 +195,14 @@ hoursAgo <- now() - maxTime
 
 # meter is SMETS2
 elecCons_dt[, consumption_kWh := consumption] # for clarity - see https://developer.octopus.energy/docs/api/#list-consumption-for-a-meter
+
+skimr::skim(elecCons_dt)
+
 ```
 
 The data used here is up to `r maxTime`, which is `r round(hoursAgo,1)` hours ago. In general the Octopus API seems to have data up to `midnight last night`.
+
+### Electricity costs
 
 ```{r elecTotal}
 t <- elecCons_dt[, .(nDays = uniqueN(dv_date),
@@ -229,10 +236,14 @@ message("Projected elec annual total @ ", elec_kWh,"p")
 annualTotal <- mean(t$sumkWh)*365
 annualTotal
 message("Projected annual elec cost @ ", elec_kWh,"p - including standing charge")
-annualCost <- (annualTotal*elec_kWh)+(365*0.2401) # standing charge
-annualCost
+annualCost_capped <- (annualTotal*elec_kWh)+(365*0.2401) # standing charge
+annualCost_capped
 message("Projected mean monthly elec cost @ ", elec_kWh,"p - including standing charge")
-annualCost/12
+latestMonthlyElec <- annualCost_capped/12
+latestMonthlyElec
+
+message("That's an increase of ", round(100*(annualCost_capped/annualCost),2),  " %")
+
 ```
 
 > TO DO: fix £ analysis to use tariff from API
@@ -284,6 +295,16 @@ makeFlexTable(t, digits = 2,
 ### Daily analysis
 
 ```{r plotElecImportDaily, fig.cap="Daily electricity import (current year)"}
+
+plotDT <- elecCons_dt[, .(sum_kWh = sum(consumption_kWh),
+                 mean_kWh = mean(consumption_kWh),
+                 nObs = .N), keyby = .(dv_date)]
+
+ggplot2::ggplot(plotDT, aes(x = dv_date, y = mean_kWh)) +
+  geom_point() +
+  geom_smooth() +
+  labs(x = "Date",
+       y = "Mean kWh")
 
 plotDT <- elecCons_dt[, .(sum_kWh = sum(consumption_kWh),
                  mean_kWh = mean(consumption_kWh),
@@ -361,11 +382,12 @@ monthlyElec_DT[, value := "Grid import"]
 
 plotDT <- rbind(monthlyPvGen_DT, monthlyElec_DT)
 
-ggplot2::ggplot(plotDT, aes(x = month, y = hh_meankWh, 
-                            colour = value)) +
+ggplot2::ggplot(plotDT, aes(x = lubridate::month(month, label = TRUE), y = hh_meankWh, 
+                            colour = value, group = value)) +
   geom_line()+
   scale_color_discrete(name = "Type")+
-  facet_grid(year ~ .)
+  facet_grid(year ~ .) +
+  labs(x = "Month")
 ```
 
 > To do: model value of PV gen if we were to use all of it. 
@@ -555,6 +577,8 @@ gasM3TokWh <- 11.36
 
 We use a multiplier of `r gasM3TokWh` kWh/m3 (https://www.theenergyshop.com/guides/how-to-convert-gas-units-to-kwh)
 
+> Check for missing dates and adjust "&page_size=100000" if needed
+
 ```{r getGasConsumption}
 url <- paste0("https://api.octopus.energy/v1/gas-meter-points/", 
               apiParams$gas_mpan , "/",
@@ -562,7 +586,7 @@ url <- paste0("https://api.octopus.energy/v1/gas-meter-points/",
               apiParams$gas_serial, "/",
               "consumption",
               "?period_from=2022-01-01T00:00Z",
-              "&page_size=10000")
+              "&page_size=100000") # make sure is large enough
 resp <- httr::GET(url = url, authenticate(user = apiParams$key, password = ""))
 df <- jsonlite::parse_json(resp, simplifyVector = TRUE)
 gasCons_dt <- data.table::as.data.table(df$results)
@@ -572,9 +596,13 @@ gasCons_dt <- makeDerivedVars(gasCons_dt)
 # convert to kWh
 gasCons_dt[, consumption_m3 := consumption]
 gasCons_dt[, consumption_kWh := consumption * gasM3TokWh]
+
+skimr::skim(gasCons_dt)
 ```
 
 Note that this data starts later as we finally got the original un-registered smart meter replaced in February.
+
+### Gas costs
 
 ```{r gasTotal}
 
@@ -592,27 +620,31 @@ t <- gasCons_dt[, .(nDays = uniqueN(dv_date),
                      sumkWh = sum(consumption_kWh)),
                  keyby = .(dv_date)]
 
-message("########")
+message("#### 2022 pre-cap price ####")
 gas_kWh <- 0.0719
+gas_sc <- 0.261
 message("Projected gas annual total @ ", gas_kWh,"p")
 annualTotal <- mean(t$sumkWh)*365
 annualTotal
-message("Projected annual gas cost @ ", gas_kWh,"p - including standing charge")
+message("Projected annual gas cost @ £", gas_kWh,"/kWh - including standing charge @ £", gas_sc, " £/day")
 annualCost <- (annualTotal*gas_kWh)+(365*0.261) # standing charge
 annualCost
-message("Projected mean monthly gas cost @ ", gas_kWh,"p - including standing charge")
+message("Projected mean monthly gas cost (£)")
 annualCost/12
 
-message("########")
-gas_kWh <- 0.103
-message("Projected gas annual total @ ", gas_kWh,"p")
-annualTotal <- mean(t$sumkWh)*365
-annualTotal
-message("Projected annual gas cost @ ", gas_kWh,"p - including standing charge")
-annualCost <- (annualTotal*gas_kWh)+(365*0.261) # standing charge
-annualCost
-message("Projected mean monthly gas cost @ ", gas_kWh,"p - including standing charge")
-annualCost/12
+message("#### 2022 Cap price ####")
+gas_kWh <- 0.1031
+gas_sc <- 0.2684
+
+message("Projected annual gas cost @ £", gas_kWh,"/kWh - including standing charge @ £", gas_sc, " £/day")
+annualCost_capped <- (annualTotal*gas_kWh)+(365*gas_sc) # standing charge
+annualCost_capped
+message("Projected mean monthly gas cost (£)")
+latestMonthlyGas <- annualCost_capped/12
+latestMonthlyGas
+
+
+message("That's an increase of ", round(100*(latestMonthlyGas/annualCost),2),  " %")
 ```
 
 ### Half-hourly anlaysis
@@ -660,6 +692,16 @@ Figure \@ref(fig:plotGasImportDaily) shows the mean daily kWh import with a smoo
 > To do: mark weekends etc
 
 ```{r plotGasImportDaily, fig.cap="Daily gas consumption (current year)"}
+plotDT <- gasCons_dt[, .(sum_kWh = sum(consumption_kWh),
+                 mean_kWh = mean(consumption_kWh),
+                 nObs = .N), keyby = .(dv_date)]
+
+ggplot2::ggplot(plotDT, aes(x = dv_date, y = sum_kWh)) +
+  geom_point() +
+  geom_smooth() +
+  theme(legend.position = "bottom") +
+  labs(x = "Date",
+       y = "Sum kWh per day")
 
 plotDT <- gasCons_dt[, .(sum_kWh = sum(consumption_kWh),
                  mean_kWh = mean(consumption_kWh),
@@ -732,6 +774,29 @@ t <- gasCons_dt[, .(sumkWh = sum(consumption_kWh),
 makeFlexTable(t, cap = "Emissions estimation using gas kWh to date")
 ```
 
+
+# Total costs
+
+Monthly estimated costs (averaged over 12 months to guide monthly payment value)
+
+```{r totalCosts}
+
+message("# Elec £:", round(latestMonthlyElec,2))
+
+message("Annual: £", round(12*latestMonthlyElec,2))
+
+message("# Gas £:", round(latestMonthlyGas,2))
+
+message("Annual: £", round(12*latestMonthlyGas,2))
+
+message("# Total")
+message("Monthly total £:", round(latestMonthlyElec + latestMonthlyGas, 2))
+
+
+message("Annual total £:", round(12 * (latestMonthlyElec + latestMonthlyGas),2))
+```
+
+> NB - this is a simple average across all days/months and takes no account of usage trends (see above). The octopus estimator is smarter than that :-)
 
 # Annexes
 ## Data descriptions
