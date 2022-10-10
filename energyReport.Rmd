@@ -204,6 +204,15 @@ The data used here is up to `r maxTime`, which is `r round(hoursAgo,1)` hours ag
 
 ### Electricity costs
 
+Analyse costs using:
+
+ * tariff up to 21/11/2022 - £0.2408 /kWh & £0.2401 /day (All rates inc. VAT)
+ * tariff from 22/11/2022 https://octopus.energy/blog/energy-price-cap-oct-2022/#flexibleoct22rates (_Eastern_)
+
+The latter are slightly different from the assumed to be at UK price cap: £0.34 / kWh & £0.46 ( see [Ofgem](https://www.ofgem.gov.uk/information-consumers/energy-advice-households/check-if-energy-price-cap-affects-you))
+
+Yes, I know I can extract our exact tariff from the octopus API...
+
 ```{r elecTotal}
 t <- elecCons_dt[, .(nDays = uniqueN(dv_date),
                      sumkWh = sum(consumption_kWh),
@@ -220,29 +229,31 @@ t <- elecCons_dt[, .(nDays = uniqueN(dv_date),
                      sumkWh = sum(consumption_kWh)),
                  keyby = .(dv_date)]
 message("########")
-elec_kWh <- 0.24
-message("Projected elec annual total @ ", elec_kWh,"p")
+message("# Up to 21st Nov 2022")
+prices <- list()
+prices$elec_kWh <- 0.2408
+message("Projected annual elec total kWh")
 annualTotal <- mean(t$sumkWh)*365
 annualTotal
-message("Projected annual elec cost @ ", elec_kWh,"p - including standing charge")
-annualCost <- (annualTotal*elec_kWh)+(365*0.2401) # standing charge
+prices$elec_sc <- 0.2401
+message("Projected annual elec cost @ £", prices$elec_kWh," per kWh & standing charge at ", prices$elec_sc, " per day")
+annualCost <- (annualTotal*prices$elec_kWh)+(365*prices$elec_sc ) # standing charge
 annualCost
-message("Projected mean monthly elec cost @ ", elec_kWh,"p - including standing charge")
+message("Mean monthly cost: £")
 annualCost/12
 
 message("########")
-elec_kWh <- 0.34
-message("Projected elec annual total @ ", elec_kWh,"p")
-annualTotal <- mean(t$sumkWh)*365
-annualTotal
-message("Projected annual elec cost @ ", elec_kWh,"p - including standing charge")
-annualCost_capped <- (annualTotal*elec_kWh)+(365*0.2401) # standing charge
+message("# From to 22nd Nov 2022")
+prices$elec_kWh <- 0.3506 # higher than ofgem average rate
+prices$elec_sc <- 0.3729 # lower than ofgem average rate
+message("Projected annual elec cost @ £", prices$elec_kWh," per kWh & standing charge @ £ ", prices$elec_sc, " per day")
+annualCost_capped <- (annualTotal*prices$elec_kWh)+(365*prices$elec_sc) # standing charge
 annualCost_capped
-message("Projected mean monthly elec cost @ ", elec_kWh,"p - including standing charge")
+message("Projected mean monthly £ ")
 latestMonthlyElec <- annualCost_capped/12
 latestMonthlyElec
 
-message("That's an increase of ", round(100*(annualCost_capped/annualCost),2),  " %")
+message("That's an increase of ", round(100*((annualCost_capped-annualCost)/annualCost),2),  " % points")
 
 ```
 
@@ -604,6 +615,15 @@ Note that this data starts later as we finally got the original un-registered sm
 
 ### Gas costs
 
+Analyse costs using:
+
+ * tariff up to 21/11/2022 - £0.0719 /kWh & £0.261 /day (All rates inc. VAT)
+ * tariff from 22/11/2022 https://octopus.energy/blog/energy-price-cap-oct-2022/#flexibleoct22rates (_Eastern_)
+
+The latter are (currently) the same as the at UK price cap: £0.1031 / kWh & £0.2684 ( see [Ofgem](https://www.ofgem.gov.uk/information-consumers/energy-advice-households/check-if-energy-price-cap-affects-you))
+
+Yes, I know I can extract our exact tariff from the octopus API...
+ 
 ```{r gasTotal}
 
 
@@ -621,30 +641,30 @@ t <- gasCons_dt[, .(nDays = uniqueN(dv_date),
                  keyby = .(dv_date)]
 
 message("#### 2022 pre-cap price ####")
-gas_kWh <- 0.0719
-gas_sc <- 0.261
-message("Projected gas annual total @ ", gas_kWh,"p")
+prices$gas_kWh <- 0.0719
+prices$gas_sc <- 0.261
+message("Projected gas annual total @ ", prices$gas_kWh,"p")
 annualTotal <- mean(t$sumkWh)*365
 annualTotal
-message("Projected annual gas cost @ £", gas_kWh,"/kWh - including standing charge @ £", gas_sc, " £/day")
-annualCost <- (annualTotal*gas_kWh)+(365*0.261) # standing charge
+message("Projected annual gas cost @ £", prices$gas_kWh,"/kWh andstanding charge @ £", prices$gas_sc, " /day")
+annualCost <- (annualTotal*prices$gas_kWh)+(365*prices$gas_sc) # standing charge
 annualCost
 message("Projected mean monthly gas cost (£)")
 annualCost/12
 
 message("#### 2022 Cap price ####")
-gas_kWh <- 0.1031
-gas_sc <- 0.2684
+prices$gas_kWh <- 0.1031
+prices$gas_sc <- 0.2684
 
-message("Projected annual gas cost @ £", gas_kWh,"/kWh - including standing charge @ £", gas_sc, " £/day")
-annualCost_capped <- (annualTotal*gas_kWh)+(365*gas_sc) # standing charge
+message("Projected annual gas cost @ £", prices$gas_kWh,"/kWh - including standing charge @ £", prices$gas_sc, " /day")
+annualCost_capped <- (annualTotal*prices$gas_kWh)+(365*prices$gas_sc) # standing charge
 annualCost_capped
 message("Projected mean monthly gas cost (£)")
 latestMonthlyGas <- annualCost_capped/12
 latestMonthlyGas
 
 
-message("That's an increase of ", round(100*(latestMonthlyGas/annualCost),2),  " %")
+message("That's an increase of ", round(100*((annualCost_capped-annualCost)/annualCost),2),  " % points")
 ```
 
 ### Half-hourly anlaysis
@@ -777,24 +797,42 @@ makeFlexTable(t, cap = "Emissions estimation using gas kWh to date")
 
 # Total costs
 
-Monthly estimated costs (averaged over 12 months to guide monthly payment value)
+Monthly estimated costs (averaged over 12 months to guide monthly payment value).
+
+These use [the latest Octopus flexible tariff from Oct 2022](https://octopus.energy/blog/energy-price-cap-oct-2022/#flexibleoct22rates) which are protected ny the government's Energy Price Guarantee:
+
+ * electricity: £`r round(prices$elec_kWh,2)` / kWh and £`r round(prices$elec_sc,2)` / day (standing charge) 
+ * gas: £`r round(prices$gas_kWh,2)` / kWh and £`r round(prices$gas_sc,2)` / day (standing charge)
 
 ```{r totalCosts}
 
-message("# Elec £:", round(latestMonthlyElec,2))
+message("# Elec monthly £:", round(latestMonthlyElec,2))
 
-message("Annual: £", round(12*latestMonthlyElec,2))
+message("Elec annual: £", round(12*latestMonthlyElec,2))
 
-message("# Gas £:", round(latestMonthlyGas,2))
+message("# Gas monthly£:", round(latestMonthlyGas,2))
 
-message("Annual: £", round(12*latestMonthlyGas,2))
+message("Gas annual: £", round(12*latestMonthlyGas,2))
 
-message("# Total")
+message("#####")
+message("# Totals")
 message("Monthly total £:", round(latestMonthlyElec + latestMonthlyGas, 2))
 
+annualTotalcapped <- 12 * (latestMonthlyElec + latestMonthlyGas)
 
-message("Annual total £:", round(12 * (latestMonthlyElec + latestMonthlyGas),2))
+message("Annual total £:", round(annualTotalcapped,2))
 ```
+
+If we then subtract the Energy Bill Support Scheme £400 this gives
+
+```{r totalCostsAdjusted}
+# subtract £400 Energy Bill Support Scheme
+annualTotalcappedAdjusted <- annualTotalcapped - 400
+message("Annual adjusted total £:", round(annualTotalcappedAdjusted,2))
+message("Monthly adjusted total £:", round(annualTotalcappedAdjusted/12,2))
+```
+
+Note that octopus appear to be 'paying' this in [instalments of £67](https://octopus.energy/blog/government-support-with-energy-costs-this-winter/) by reducing the direct debit value.
 
 > NB - this is a simple average across all days/months and takes no account of usage trends (see above). The octopus estimator is smarter than that :-)
 
