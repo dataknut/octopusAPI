@@ -283,6 +283,7 @@ makeFlexTable(t, digits = 3, cap = "Summary stats (all half-hourly data)")
 
 
 ```{r plotElecImportDailyByPeriod, fig.cap="Mean half-hourly electricity import (kWh) by peak period (current year)"}
+
 plotDT <- elecCons_dt[, .(sum_kWh = sum(consumption_kWh),
                  mean_kWh = mean(consumption_kWh),
                  nObs = .N), keyby = .(dv_date, dv_peakPeriod)]
