@@ -239,6 +239,15 @@ t <- dcast(recent_dt, dv_date + dow ~ dv_peakPeriod, val.var = sum_kWh_elec)
 t <- t[daily_totals]
 makeFlexTable(t, digits = 2,
               cap = "Recent electricity use")
+
+recent_Hourlydt <- elecCons_dt[dv_date >= today - 14 , .(sum_kWh_elec = sum(consumption_kWh)), 
+                          keyby = .(Date = dv_date,
+                                    hour = lubridate::hour(dv_start))]
+
+ggplot2::ggplot(recent_Hourlydt, aes(x = hour, y = sum_kWh_elec, 
+                                     alpha = Date, group = Date)) +
+  geom_line() +
+  labs(caption = "Most recent 14 days")
 ```
 > Can we [flex](https://twitter.com/tom_rushby/status/1589653290609913856) any of that for £3/kWh?
 
@@ -258,7 +267,7 @@ ggplot2::ggplot(plotDT, aes(x = dv_date, y = sum_kWh,
   #facet_grid(dv_peakPeriod ~ .) +
   scale_colour_viridis_d(name = "Weekend") +
   labs(x = "Date",
-       y = "Mean kWh")
+       y = "Daily kWh")
 ```
 
 
