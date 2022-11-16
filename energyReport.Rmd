@@ -298,15 +298,15 @@ makeFlexTable(t, digits = 2,
 
 > Can we [flex](https://twitter.com/tom_rushby/status/1589653290609913856) any of the above for £3/kWh?
 
-Instigated by Uk National gird, implemented (in our case) by Octopus.
+Instigated by Uk National gird, implemented (in our case) by Octopus- https://twitter.com/SavingSessions
 
 #### 15th Nov 2022
 
 17:00 - 18:00 £2.50/kWh
 
-Figure \@ref(fig:firstSavingSessionUsage) shows how we did in the first #SavingsSession compared to the last 8 similar days of the week.
+Figure \@ref(fig:firstSavingSessionsUsage) shows how we did in the first #SavingSessions compared to the last 8 similar days of the week.
 
-```{r firstSavingSessionUsage, fig.cap="First #SavingsSession - how did we do?"}
+```{r firstSavingSessionsUsage, fig.cap="First #SavingSessions - how did we do?"}
 sessionDateStart <- "2022-11-15 17:00:00" # the half-hour it starts
 sessionDateEnd <- "2022-11-15 17:30:00" # the half-hour it ends (makes data selection easier)
 
@@ -330,7 +330,7 @@ session_HalfHourlyDT <- elecCons_dt[dv_date == lubridate::date(sessionDateStart)
                                .(mean_kWh_elec = mean(consumption_kWh)), 
                           keyby = .(hms = dv_hms,
                                     wday = lubridate::wday(dv_date, label = TRUE))] # to check
-session_HalfHourlyDT[, legend_lab := paste0("SavingsSession day: ", 
+session_HalfHourlyDT[, legend_lab := paste0("SavingSessions day: ", 
                                       lubridate::wday(sessionDate, label = TRUE),
                                       " ", sessionDate, "17:00 - 18:00")]
 
@@ -358,11 +358,11 @@ ymin <- min(plotDT$mean_kWh_elec)
        caption = "Data: @OctopusEnergy\nPlot: @dataknut\nPoints plotted at middle of half-hour for clarity")
 ```
 
-> What do we conclude? Our electricity usage was probably slightly higher than 'average' for this time on a Tuesday (so we won't win any points) but it was probably **way lower** than it otherwise would have been judging by the spikes before and after.
+> What do we conclude? For a complicated set of pre-Xmas prep reasons (and poor institutional memory) our electricity usage in the late afternoon was much *higher* than usual on the session day. As a result our actions only brought usage down to 'average' for this time on a Tuesday (so we won't win any points). But as a result our usage was probably **way lower** than it otherwise would have been judging by the spikes before and after. So if it really had been a critical peak event, we would have been helping the system but not being rewarded...
 
-For fun - Figure \@ref(fig:firstSavingSessionCI) shows the mean carbon intensity in g CO2(e) per kWh for each half-hour.
+For fun - Figure \@ref(fig:firstSavingSessionsCI) shows the mean carbon intensity in g CO2(e) per kWh for each half-hour.
 
-```{r firstSavingSessionCI, fig.cap="First #SavingsSession - comparison of carbon intensity"}
+```{r firstSavingSessionsCI, fig.cap="First #SavingSessions - comparison of carbon intensity"}
 
 ngeso_dt_orig[, dv_date := lubridate::date(dv_start)]
 ngeso_dt_orig[, dv_hms := hms::as_hms(dv_start)]
@@ -385,7 +385,7 @@ session_HalfHourlyCIDT <- ngeso_dt_orig[dv_date == lubridate::date(sessionDateSt
                                .(mean_CI = mean(CARBON_INTENSITY)), 
                           keyby = .(hms = dv_hms,
                                     wday = lubridate::wday(dv_date, label = TRUE))] # to check
-session_HalfHourlyCIDT[, legend_lab := paste0("SavingsSession day: ", 
+session_HalfHourlyCIDT[, legend_lab := paste0("SavingSessions day: ", 
                                       lubridate::wday(sessionDate, label = TRUE),
                                       " ", sessionDate, " 17:00 - 18:00")]
 
