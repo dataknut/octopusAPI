@@ -332,7 +332,7 @@ session_HalfHourlyDT <- elecCons_dt[dv_date == lubridate::date(sessionDateStart)
                                     wday = lubridate::wday(dv_date, label = TRUE))] # to check
 session_HalfHourlyDT[, legend_lab := paste0("SavingSessions day: ", 
                                       lubridate::wday(sessionDate, label = TRUE),
-                                      " ", sessionDate, "17:00 - 18:00")]
+                                      " ", sessionDate, " 17:00 - 18:00")]
 
 plotDT <- rbind(recent_HalfHourlyDT, session_HalfHourlyDT)
 
