@@ -107,6 +107,59 @@ More at: https://dataknut.github.io/octopusAPI/
 
 Code at: https://github.com/dataknut/octopusAPI
 
+# Data
+
+This analysis uses:
+
+ * our smart meter data, downloaded via the Octopus API
+ * the NG-ESO half-hourly carbon intensity data
+
+## Octopus smart meter data
+
+See below
+
+## NG-ESO half-hourly carbon intensity data
+
+We save this locally, if it is older than 1 day we re-download.
+
+```{r setNGESOelec}
+# this needs to be more clever - only download dates we want from API?
+esoF <- here::here("data", "latest_df_fuel_ckan.csv")
+if(file.exists(paste0(esoF, ".gz"))){
+  message("We already have a version saved to: ", paste0(esoF, ".gz"))
+  message("Loading it...")
+  ngeso_dt_orig <- data.table::fread(paste0(esoF, ".gz"))
+} else {
+  message("We don't already have a version, downloading and saving to: ", esoF)
+  ngeso_dt_orig <- data.table::fread("https://data.nationalgrideso.com/backend/dataset/88313ae5-94e4-4ddc-a790-593554d8c6b9/resource/f93d1835-75bc-43e5-84ad-12472b180a98/download/df_fuel_ckan.csv")
+  # nice dateTime
+  ngeso_dt_orig[, dv_start := lubridate::as_datetime(DATETIME)]
+  data.table::fwrite(ngeso_dt_orig, esoF)
+  dkUtils::gzipIt(esoF)
+  data.table::fwrite(ngeso_dt_orig, "~/Dropbox/data/UK_NGESO/genMix/latest_df_fuel_ckan.csv") # save locally for future re-use
+  dkUtils::gzipIt("~/Dropbox/data/UK_NGESO/genMix/latest_df_fuel_ckan.csv")
+}
+
+# if older than 1 day, reload
+today <- lubridate::today()
+lastNGESO <- as.Date(max(ngeso_dt_orig$dv_start))
+
+if(today - lastNGESO > 1) {
+  # old data, reload
+  message("But the version we have dates from ", lastNGESO, " (",today - lastNGESO ," days ago), downloading latest...")
+  ngeso_dt_orig <- data.table::fread("https://data.nationalgrideso.com/backend/dataset/88313ae5-94e4-4ddc-a790-593554d8c6b9/resource/f93d1835-75bc-43e5-84ad-12472b180a98/download/df_fuel_ckan.csv")
+  # nice dateTime
+  ngeso_dt_orig[, dv_start := lubridate::as_datetime(DATETIME)]
+  data.table::fwrite(ngeso_dt_orig, esoF)
+  dkUtils::gzipIt(esoF)
+}
+
+# we think renewable is wind + solar, low carbon includes nuclear
+#ggplot2::ggplot(t, aes(x = RENEWABLE_perc, y = LOW_CARBON_perc)) +
+#  geom_point()
+```
+
+
 # Test without authentication
 
 Check the response code. This seems to generate errors (sometimes).
@@ -239,17 +292,127 @@ t <- dcast(recent_dt, dv_date + dow ~ dv_peakPeriod, val.var = sum_kWh_elec)
 t <- t[daily_totals]
 makeFlexTable(t, digits = 2,
               cap = "Recent electricity use")
-
-recent_Hourlydt <- elecCons_dt[dv_date >= today - 14 , .(sum_kWh_elec = sum(consumption_kWh)), 
-                          keyby = .(Date = dv_date,
-                                    hour = lubridate::hour(dv_start))]
-
-ggplot2::ggplot(recent_Hourlydt, aes(x = hour, y = sum_kWh_elec, 
-                                     alpha = Date, group = Date)) +
-  geom_line() +
-  labs(caption = "Most recent 14 days")
 ```
-> Can we [flex](https://twitter.com/tom_rushby/status/1589653290609913856) any of that for £3/kWh?
+
+### Winter 2022 SavingsSessions
+
+> Can we [flex](https://twitter.com/tom_rushby/status/1589653290609913856) any of the above for £3/kWh?
+
+Instigated by Uk National gird, implemented (in our case) by Octopus.
+
+#### 15th Nov 2022
+
+17:00 - 18:00 £2.50/kWh
+
+Figure \@ref(fig:firstSavingSessionUsage) shows how we did in the first #SavingsSession compared to the last 8 similar days of the week.
+
+```{r firstSavingSessionUsage, fig.cap="First #SavingsSession - how did we do?"}
+sessionDateStart <- "2022-11-15 17:00:00" # the half-hour it starts
+sessionDateEnd <- "2022-11-15 17:30:00" # the half-hour it ends (makes data selection easier)
+
+sessionDay <- lubridate::wday(sessionDateStart, label = TRUE) # you'll see why
+sessionDate <- lubridate::date(sessionDateStart) # you'll see why
+
+compare_HalfHourlyDT <- elecCons_dt[dv_date != sessionDate & # not the session day
+                                 lubridate::wday(dv_date, label = TRUE) == sessionDay & # same day of the week
+                                dv_date > sessionDate - 60 # 2 months
+                                ] # to check
+compare_HalfHourlyDT[, wday := lubridate::wday(dv_date, label = TRUE)]
+nComparisonDays <- uniqueN(compare_HalfHourlyDT$dv_date)
+
+recent_HalfHourlyDT <- compare_HalfHourlyDT[,
+                               .(mean_kWh_elec = mean(consumption_kWh)), 
+                          keyby = .(hms = dv_hms,
+                                    wday)] # to check
+recent_HalfHourlyDT[, legend_lab := paste0("Mean of the previous ", nComparisonDays, " ", lubridate::wday(sessionDate, label = TRUE, abbr = FALSE), "s")]
+
+session_HalfHourlyDT <- elecCons_dt[dv_date == lubridate::date(sessionDateStart),  #  the session day
+                               .(mean_kWh_elec = mean(consumption_kWh)), 
+                          keyby = .(hms = dv_hms,
+                                    wday = lubridate::wday(dv_date, label = TRUE))] # to check
+session_HalfHourlyDT[, legend_lab := paste0("SavingsSession day: ", 
+                                      lubridate::wday(sessionDate, label = TRUE),
+                                      " ", sessionDate, "17:00 - 18:00")]
+
+plotDT <- rbind(recent_HalfHourlyDT, session_HalfHourlyDT)
+
+plotDT[, adjusted_hms := hms::as_hms(hms + (15*60))]
+
+periodAlpha <- 0.3 #  shaded rects on plots
+periodFill <- "grey50"
+ymax <- max(plotDT$mean_kWh_elec)
+ymin <- min(plotDT$mean_kWh_elec)
+
+  ggplot2::ggplot(plotDT, aes(x = adjusted_hms, y = mean_kWh_elec, 
+                                     colour = legend_lab)) +
+  geom_line() +
+    geom_point() +
+    annotate("rect", xmin = hms::as_hms("17:00:00"),
+             xmax = hms::as_hms("18:00:00"),
+             ymin = ymin, ymax = ymax,
+             alpha = periodAlpha, fill = periodFill) +
+  scale_color_discrete(name = "Legend") +
+    theme(legend.position = "bottom") +
+  labs(x = "Time of day",
+       y = "Mean kWh per half-hour",
+       caption = "Data: @OctopusEnergy\nPlot: @dataknut\nPoints plotted at middle of half-hour for clarity")
+```
+
+> What do we conclude? Our electricity usage was probably slightly higher than 'average' for this time on a Tuesday (so we won't win any points) but it was probably **way lower** than it otherwise would have been judging by the spikes before and after.
+
+For fun - Figure \@ref(fig:firstSavingSessionCI) shows the mean carbon intensity in g CO2(e) per kWh for each half-hour.
+
+```{r firstSavingSessionCI, fig.cap="First #SavingsSession - comparison of carbon intensity"}
+
+ngeso_dt_orig[, dv_date := lubridate::date(dv_start)]
+ngeso_dt_orig[, dv_hms := hms::as_hms(dv_start)]
+
+compare_HalfHourlyCIDT <- ngeso_dt_orig[dv_start != sessionDate & # not the session day
+                                 lubridate::wday(dv_date, label = TRUE) == sessionDay & # same day of the week
+                                dv_date > sessionDate - 60 # 2 months
+                                ] # to check
+compare_HalfHourlyCIDT[, wday := lubridate::wday(dv_date, label = TRUE)]
+nComparisonDays <- uniqueN(compare_HalfHourlyCIDT$dv_date)
+
+recent_HalfHourlyCIDT <- compare_HalfHourlyCIDT[,
+                               .(mean_CI = mean(CARBON_INTENSITY)), 
+                          keyby = .(hms = dv_hms,
+                                    wday)] # to check
+
+recent_HalfHourlyCIDT[, legend_lab := paste0("Mean of the previous ", nComparisonDays, " ", lubridate::wday(sessionDate, label = TRUE, abbr = FALSE), "s")]
+
+session_HalfHourlyCIDT <- ngeso_dt_orig[dv_date == lubridate::date(sessionDateStart),  #  the session day
+                               .(mean_CI = mean(CARBON_INTENSITY)), 
+                          keyby = .(hms = dv_hms,
+                                    wday = lubridate::wday(dv_date, label = TRUE))] # to check
+session_HalfHourlyCIDT[, legend_lab := paste0("SavingsSession day: ", 
+                                      lubridate::wday(sessionDate, label = TRUE),
+                                      " ", sessionDate, " 17:00 - 18:00")]
+
+plotDT <- rbind(recent_HalfHourlyCIDT, session_HalfHourlyCIDT)
+
+plotDT[, adjusted_hms := hms::as_hms(hms + (15*60))] # ad5 15 minutes so plots at middle of half-hour for clqrity
+
+periodAlpha <- 0.3 #  shaded rects on plots
+periodFill <- "grey50"
+ymax <- max(plotDT$mean_kWh_elec)
+ymin <- min(plotDT$mean_kWh_elec)
+
+  ggplot2::ggplot(plotDT, aes(x = adjusted_hms, y = mean_CI, 
+                                     colour = legend_lab)) +
+  geom_line() +
+    geom_point() +
+    annotate("rect", xmin = hms::as_hms("17:00:00"),
+             xmax = hms::as_hms("18:00:00"),
+             ymin = ymin, ymax = ymax,
+             alpha = periodAlpha, fill = periodFill) +
+  scale_color_discrete(name = "Legend") +
+    theme(legend.position = "bottom") +
+  labs(x = "Time of day",
+       y = "Mean carbon intensity (g CO2e/kWh)",
+       caption = "Data: @OctopusEnergy & @NationalGridESO \nPlot: @dataknut\nPoints plotted at middle of half-hour for clarity")
+```
+
 
 ### Daily analysis
 
@@ -405,54 +568,16 @@ For 2021 this is: `r rmdParams$BEIS_elec_ci` Kg CO2e/kWh
 
 For the NG-ESO method we use the NG-ESO [half-hourly carbon intensity data](https://data.nationalgrideso.com/carbon-intensity1/historic-generation-mix) that match to the half-hours in our electricity use dataset.
 
-We save this locally, if it is older than 1 day we re-download.
+Mean half-hourly carbon intensity from the NG-ESO data for the data period was `r round(mean(elecCons_dt$CARBON_INTENSITY, na.rm = TRUE)/1000,4)` Kg CO2e/kWh. If this is substantially different to  the BEIS 2021 value of `r round(rmdParams$BEIS_elec_ci,4)` Kg CO2e/kWh, we would  expect emissions estimates using the NG-ESO factor to differ.
 
-```{r setNGESOelec}
-# this needs to be more clever - only download dates we want from API?
-esoF <- here::here("data", "latest_df_fuel_ckan.csv")
-if(file.exists(paste0(esoF, ".gz"))){
-  message("We already have a version saved to: ", paste0(esoF, ".gz"))
-  message("Loading it...")
-  ngeso_dt_orig <- data.table::fread(paste0(esoF, ".gz"))
-} else {
-  message("We don't already have a version, downloading and saving to: ", esoF)
-  ngeso_dt_orig <- data.table::fread("https://data.nationalgrideso.com/backend/dataset/88313ae5-94e4-4ddc-a790-593554d8c6b9/resource/f93d1835-75bc-43e5-84ad-12472b180a98/download/df_fuel_ckan.csv")
-  # nice dateTime
-  ngeso_dt_orig[, dv_start := lubridate::as_datetime(DATETIME)]
-  data.table::fwrite(ngeso_dt_orig, esoF)
-  dkUtils::gzipIt(esoF)
-  data.table::fwrite(ngeso_dt_orig, "~/Dropbox/data/UK_NGESO/genMix/latest_df_fuel_ckan.csv") # save locally for future re-use
-  dkUtils::gzipIt("~/Dropbox/data/UK_NGESO/genMix/latest_df_fuel_ckan.csv")
-}
-
-# if older than 1 day, reload
-today <- lubridate::today()
-lastNGESO <- as.Date(max(ngeso_dt_orig$dv_start))
-
-if(today - lastNGESO > 1) {
-  # old data, reload
-  message("But the version we have dates from ", lastNGESO, " (",today - lastNGESO ," days ago), downloading latest...")
-  ngeso_dt_orig <- data.table::fread("https://data.nationalgrideso.com/backend/dataset/88313ae5-94e4-4ddc-a790-593554d8c6b9/resource/f93d1835-75bc-43e5-84ad-12472b180a98/download/df_fuel_ckan.csv")
-  # nice dateTime
-  ngeso_dt_orig[, dv_start := lubridate::as_datetime(DATETIME)]
-  data.table::fwrite(ngeso_dt_orig, esoF)
-  dkUtils::gzipIt(esoF)
-}
-
-
+```{r mergeData}
 # merge to usage data
 setkey(ngeso_dt_orig, dv_start)
 setkey(elecCons_dt, dv_start)
 elecCons_dt <- ngeso_dt_orig[, .(dv_start, CARBON_INTENSITY, LOW_CARBON_perc, RENEWABLE_perc)][elecCons_dt] # keeps match to our electricity use
 
 # there will be NAs if some datetimes are missing from ngeso_dt_orig
-
-# we think renewable is wind + solar, low carbon includes nuclear
-#ggplot2::ggplot(t, aes(x = RENEWABLE_perc, y = LOW_CARBON_perc)) +
-#  geom_point()
 ```
-
-Mean half-hourly carbon intensity from the NG-ESO data for the data period was `r round(mean(elecCons_dt$CARBON_INTENSITY, na.rm = TRUE)/1000,4)` Kg CO2e/kWh. If this is substantially different to  the BEIS 2021 value of `r round(rmdParams$BEIS_elec_ci,4)` Kg CO2e/kWh, we would  expect emissions estimates using the NG-ESO factor to differ.
 
 For context, Figure \@ref(fig:ngesoMonthly) summarises the mean half-hourly carbon intensity by month for the data period. We can clearly see that February 2022 was a very low carbon month... in fact it was a [very windy month with 3 named storms](https://www.metoffice.gov.uk/binaries/content/assets/metofficegovuk/pdf/weather/learn-about/uk-past-events/summaries/uk_monthly_climate_summary_202202a.pdf).
 
