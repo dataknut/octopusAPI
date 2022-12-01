@@ -503,7 +503,7 @@ makeFlexTable(wt[, hms:= as.factor(hms)], cap = "kWh comparisons (hms = half hou
 
 > What do we conclude? 
 
-> Cost centre #3 rushed home to get a toastie & his laundry in before 17:30 and then went to rugby training
+> Cost centre #3 rushed home to get a toastie & his laundry in on the 30@30 cycle before 17:00 and then went to rugby training
 
 > Cost centre #4 just went to the gym
 
