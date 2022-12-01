@@ -111,8 +111,8 @@ Code at: https://github.com/dataknut/octopusAPI
 
 This analysis uses:
 
- * our smart meter data, downloaded via the Octopus API
- * the NG-ESO half-hourly carbon intensity data
+* our smart meter data, downloaded via the Octopus API
+* the NG-ESO half-hourly carbon intensity data
 
 ## Octopus smart meter data
 
@@ -304,7 +304,9 @@ Instigated by Uk National gird, implemented (in our case) by Octopus- https://tw
 
 17:00 - 18:00 £2.50/kWh
 
-Figure \@ref(fig:firstSavingSessionsUsage) shows how we did in the first #SavingSessions compared to the last 8 similar days of the week.
+Figure \@ref(fig:firstSavingSessionsUsage) shows how we did in the first #SavingSessions compared to the last n similar days of the week.
+
+> NB: this is not the Octopus algorithm, they use the previous usage across all days (?)
 
 ```{r firstSavingSessionsUsage, fig.cap="First #SavingSessions - how did we do?"}
 sessionDateStart <- "2022-11-15 17:00:00" # the half-hour it starts
@@ -314,25 +316,25 @@ sessionDay <- lubridate::wday(sessionDateStart, label = TRUE) # you'll see why
 sessionDate <- lubridate::date(sessionDateStart) # you'll see why
 
 compare_HalfHourlyDT <- elecCons_dt[dv_date != sessionDate & # not the session day
-                                 lubridate::wday(dv_date, label = TRUE) == sessionDay & # same day of the week
-                                dv_date > sessionDate - 60 # 2 months
-                                ] # to check
+                                      lubridate::wday(dv_date, label = TRUE) == sessionDay & # same day of the week
+                                      dv_date > sessionDate - 60 # 2 months
+] # to check
 compare_HalfHourlyDT[, wday := lubridate::wday(dv_date, label = TRUE)]
 nComparisonDays <- uniqueN(compare_HalfHourlyDT$dv_date)
 
 recent_HalfHourlyDT <- compare_HalfHourlyDT[,
-                               .(mean_kWh_elec = mean(consumption_kWh)), 
-                          keyby = .(hms = dv_hms,
-                                    wday)] # to check
+                                            .(mean_kWh_elec = mean(consumption_kWh)), 
+                                            keyby = .(hms = dv_hms,
+                                                      wday)] # to check
 recent_HalfHourlyDT[, legend_lab := paste0("Mean of the previous ", nComparisonDays, " ", lubridate::wday(sessionDate, label = TRUE, abbr = FALSE), "s")]
 
 session_HalfHourlyDT <- elecCons_dt[dv_date == lubridate::date(sessionDateStart),  #  the session day
-                               .(mean_kWh_elec = mean(consumption_kWh)), 
-                          keyby = .(hms = dv_hms,
-                                    wday = lubridate::wday(dv_date, label = TRUE))] # to check
+                                    .(mean_kWh_elec = mean(consumption_kWh)), 
+                                    keyby = .(hms = dv_hms,
+                                              wday = lubridate::wday(dv_date, label = TRUE))] # to check
 session_HalfHourlyDT[, legend_lab := paste0("SavingSessions day: ", 
-                                      lubridate::wday(sessionDate, label = TRUE),
-                                      " ", sessionDate, " 17:00 - 18:00")]
+                                            lubridate::wday(sessionDate, label = TRUE),
+                                            " ", sessionDate, " 17:00 - 18:00")]
 
 plotDT <- rbind(recent_HalfHourlyDT, session_HalfHourlyDT)
 
@@ -342,20 +344,31 @@ periodAlpha <- 0.3 #  shaded rects on plots
 periodFill <- "grey50"
 ymax <- max(plotDT$mean_kWh_elec)
 ymin <- min(plotDT$mean_kWh_elec)
+xmin <- hms::as_hms(lubridate::as_datetime(sessionDateStart))
+xmax <- hms::as_hms(lubridate::as_datetime(sessionDateEnd)) + 30*60 # to allow for the start time
 
-  ggplot2::ggplot(plotDT, aes(x = adjusted_hms, y = mean_kWh_elec, 
-                                     colour = legend_lab)) +
+ggplot2::ggplot(plotDT, aes(x = adjusted_hms, y = mean_kWh_elec, 
+                            colour = legend_lab)) +
   geom_line() +
-    geom_point() +
-    annotate("rect", xmin = hms::as_hms("17:00:00"),
-             xmax = hms::as_hms("18:00:00"),
-             ymin = ymin, ymax = ymax,
-             alpha = periodAlpha, fill = periodFill) +
+  geom_point() +
+  annotate("rect", xmin = xmin,
+           xmax = xmax,
+           ymin = ymin, ymax = ymax,
+           alpha = periodAlpha, fill = periodFill) +
   scale_color_discrete(name = "Legend") +
-    theme(legend.position = "bottom") +
+  theme(legend.position = "bottom") +
   labs(x = "Time of day",
        y = "Mean kWh per half-hour",
        caption = "Data: @OctopusEnergy\nPlot: @dataknut\nPoints plotted at middle of half-hour for clarity")
+
+t <- plotDT[hms >= xmin & hms < xmax]
+
+wt <- dcast(t[, .(hms, wday, mean_kWh_elec, legend_lab)], hms ~ legend_lab, value.var = "mean_kWh_elec")
+
+wt[, kwh_diff := `SavingSessions day: Tue 2022-11-15 17:00 - 18:00` - `Mean of the previous 10 Tuesdays`]
+wt[, pc_diff := 100*(kwh_diff/`Mean of the previous 10 Tuesdays`)]
+
+makeFlexTable(wt[, hms:= as.factor(hms)], cap = "kWh comparisons (hms = half hour period start", digits = 3)
 ```
 
 > What do we conclude? For a complicated set of pre-Xmas prep reasons (and poor institutional memory) our electricity usage in the late afternoon was much *higher* than usual on the session day. As a result our actions only brought usage down to 'average' for this time on a Tuesday (so we won't win any points). But as a result our usage was probably **way lower** than it otherwise would have been judging by the spikes before and after. So if it really had been a critical peak event, we would have been helping the system but not being rewarded...
@@ -368,26 +381,26 @@ ngeso_dt_orig[, dv_date := lubridate::date(dv_start)]
 ngeso_dt_orig[, dv_hms := hms::as_hms(dv_start)]
 
 compare_HalfHourlyCIDT <- ngeso_dt_orig[dv_start != sessionDate & # not the session day
-                                 lubridate::wday(dv_date, label = TRUE) == sessionDay & # same day of the week
-                                dv_date > sessionDate - 60 # 2 months
-                                ] # to check
+                                          lubridate::wday(dv_date, label = TRUE) == sessionDay & # same day of the week
+                                          dv_date > sessionDate - 60 # 2 months
+] # to check
 compare_HalfHourlyCIDT[, wday := lubridate::wday(dv_date, label = TRUE)]
 nComparisonDays <- uniqueN(compare_HalfHourlyCIDT$dv_date)
 
 recent_HalfHourlyCIDT <- compare_HalfHourlyCIDT[,
-                               .(mean_CI = mean(CARBON_INTENSITY)), 
-                          keyby = .(hms = dv_hms,
-                                    wday)] # to check
+                                                .(mean_CI = mean(CARBON_INTENSITY)), 
+                                                keyby = .(hms = dv_hms,
+                                                          wday)] # to check
 
 recent_HalfHourlyCIDT[, legend_lab := paste0("Mean of the previous ", nComparisonDays, " ", lubridate::wday(sessionDate, label = TRUE, abbr = FALSE), "s")]
 
 session_HalfHourlyCIDT <- ngeso_dt_orig[dv_date == lubridate::date(sessionDateStart),  #  the session day
-                               .(mean_CI = mean(CARBON_INTENSITY)), 
-                          keyby = .(hms = dv_hms,
-                                    wday = lubridate::wday(dv_date, label = TRUE))] # to check
+                                        .(mean_CI = mean(CARBON_INTENSITY)), 
+                                        keyby = .(hms = dv_hms,
+                                                  wday = lubridate::wday(dv_date, label = TRUE))] # to check
 session_HalfHourlyCIDT[, legend_lab := paste0("SavingSessions day: ", 
-                                      lubridate::wday(sessionDate, label = TRUE),
-                                      " ", sessionDate, " 17:00 - 18:00")]
+                                              lubridate::wday(sessionDate, label = TRUE),
+                                              " ", sessionDate, " 17:00 - 18:00")]
 
 plotDT <- rbind(recent_HalfHourlyCIDT, session_HalfHourlyCIDT)
 
@@ -398,16 +411,149 @@ periodFill <- "grey50"
 ymax <- max(plotDT$mean_kWh_elec)
 ymin <- min(plotDT$mean_kWh_elec)
 
-  ggplot2::ggplot(plotDT, aes(x = adjusted_hms, y = mean_CI, 
-                                     colour = legend_lab)) +
+ggplot2::ggplot(plotDT, aes(x = adjusted_hms, y = mean_CI, 
+                            colour = legend_lab)) +
   geom_line() +
-    geom_point() +
-    annotate("rect", xmin = hms::as_hms("17:00:00"),
-             xmax = hms::as_hms("18:00:00"),
-             ymin = ymin, ymax = ymax,
-             alpha = periodAlpha, fill = periodFill) +
+  geom_point() +
+  annotate("rect", xmin = hms::as_hms("17:00:00"),
+           xmax = hms::as_hms("18:00:00"),
+           ymin = ymin, ymax = ymax,
+           alpha = periodAlpha, fill = periodFill) +
   scale_color_discrete(name = "Legend") +
-    theme(legend.position = "bottom") +
+  theme(legend.position = "bottom") +
+  labs(x = "Time of day",
+       y = "Mean carbon intensity (g CO2e/kWh)",
+       caption = "Data: @OctopusEnergy & @NationalGridESO \nPlot: @dataknut\nPoints plotted at middle of half-hour for clarity")
+
+
+```
+
+#### 22nd Nov 2022
+
+skipped this one
+
+#### 30th Nov 2022
+
+17:30 - 18:30 £2.50/kWh
+
+Figure \@ref(fig:thirdSavingSessionsUsage) shows how we did in the first #SavingSessions compared to the last 8 similar days of the week.
+
+```{r thirdSavingSessionsUsage, fig.cap="Third #SavingSessions - how did we do?"}
+sessionDateStart <- "2022-11-30 17:30:00" # the half-hour it starts
+sessionDateEnd <- "2022-11-30 18:00:00" # the half-hour it ends (makes data selection easier)
+
+sessionDay <- lubridate::wday(sessionDateStart, label = TRUE) # you'll see why
+sessionDate <- lubridate::date(sessionDateStart) # you'll see why
+
+compare_HalfHourlyDT <- elecCons_dt[dv_date != sessionDate & # not the session day
+                                      lubridate::wday(dv_date, label = TRUE) == sessionDay & # same day of the week
+                                      dv_date > sessionDate - 60 # 2 months
+] # to check
+compare_HalfHourlyDT[, wday := lubridate::wday(dv_date, label = TRUE)]
+nComparisonDays <- uniqueN(compare_HalfHourlyDT$dv_date)
+
+recent_HalfHourlyDT <- compare_HalfHourlyDT[,
+                                            .(mean_kWh_elec = mean(consumption_kWh)), 
+                                            keyby = .(hms = dv_hms,
+                                                      wday)] # to check
+recent_HalfHourlyDT[, legend_lab := paste0("Mean of the previous ", nComparisonDays, " ", lubridate::wday(sessionDate, label = TRUE, abbr = FALSE), "s")]
+
+session_HalfHourlyDT <- elecCons_dt[dv_date == lubridate::date(sessionDateStart),  #  the session day
+                                    .(mean_kWh_elec = mean(consumption_kWh)), 
+                                    keyby = .(hms = dv_hms,
+                                              wday = lubridate::wday(dv_date, label = TRUE))] # to check
+session_HalfHourlyDT[, legend_lab := paste0("SavingSessions day: ", 
+                                            lubridate::wday(sessionDate, label = TRUE),
+                                            " ", sessionDate, " 17:30 - 18:30")]
+
+plotDT <- rbind(recent_HalfHourlyDT, session_HalfHourlyDT)
+
+plotDT[, adjusted_hms := hms::as_hms(hms + (15*60))]
+
+periodAlpha <- 0.3 #  shaded rects on plots
+periodFill <- "grey50"
+ymax <- max(plotDT$mean_kWh_elec)
+ymin <- min(plotDT$mean_kWh_elec)
+xmin <- hms::as_hms(lubridate::as_datetime(sessionDateStart))
+xmax <- hms::as_hms(lubridate::as_datetime(sessionDateEnd)) + 30*60 # to allow for the start time
+
+ggplot2::ggplot(plotDT, aes(x = adjusted_hms, y = mean_kWh_elec, 
+                            colour = legend_lab)) +
+  geom_line() +
+  geom_point() +
+  annotate("rect", xmin = xmin,
+           xmax = xmax,
+           ymin = ymin, ymax = ymax,
+           alpha = periodAlpha, fill = periodFill) +
+  scale_color_discrete(name = "Legend") +
+  theme(legend.position = "bottom") +
+  labs(x = "Time of day",
+       y = "Mean kWh per half-hour",
+       caption = "Data: @OctopusEnergy\nPlot: @dataknut\nPoints plotted at middle of half-hour for clarity")
+
+t <- plotDT[hms >= xmin & hms < xmax]
+
+wt <- dcast(t[, .(hms, wday, mean_kWh_elec, legend_lab)], hms ~ legend_lab, value.var = "mean_kWh_elec")
+
+wt[, kwh_diff := `SavingSessions day: Wed 2022-11-30 17:30 - 18:30` - `Mean of the previous 8 Wednesdays`]
+wt[, pc_diff := 100*(kwh_diff/`Mean of the previous 8 Wednesdays`)]
+
+makeFlexTable(wt[, hms:= as.factor(hms)], cap = "kWh comparisons (hms = half hour period start", digits = 3)
+```
+
+> What do we conclude? 
+> Cost centre #3 rushed home to get a toastie & his laundry in before 17:30 and then went to rugby training
+> Cost centre #4 just went to the gym
+> Our dinner guest was happy to delay cooking & eating slightly
+
+For fun - Figure \@ref(fig:thirdSavingSessionsCI) shows the mean carbon intensity in g CO2(e) per kWh for each half-hour.
+
+```{r thirdSavingSessionsCI, fig.cap="First #SavingSessions - comparison of carbon intensity"}
+
+ngeso_dt_orig[, dv_date := lubridate::date(dv_start)]
+ngeso_dt_orig[, dv_hms := hms::as_hms(dv_start)]
+
+compare_HalfHourlyCIDT <- ngeso_dt_orig[dv_start != sessionDate & # not the session day
+                                          lubridate::wday(dv_date, label = TRUE) == sessionDay & # same day of the week
+                                          dv_date > sessionDate - 60 # 2 months
+] # to check
+compare_HalfHourlyCIDT[, wday := lubridate::wday(dv_date, label = TRUE)]
+nComparisonDays <- uniqueN(compare_HalfHourlyCIDT$dv_date)
+
+recent_HalfHourlyCIDT <- compare_HalfHourlyCIDT[,
+                                                .(mean_CI = mean(CARBON_INTENSITY)), 
+                                                keyby = .(hms = dv_hms,
+                                                          wday)] # to check
+
+recent_HalfHourlyCIDT[, legend_lab := paste0("Mean of the previous ", nComparisonDays, " ", lubridate::wday(sessionDate, label = TRUE, abbr = FALSE), "s")]
+
+session_HalfHourlyCIDT <- ngeso_dt_orig[dv_date == lubridate::date(sessionDateStart),  #  the session day
+                                        .(mean_CI = mean(CARBON_INTENSITY)), 
+                                        keyby = .(hms = dv_hms,
+                                                  wday = lubridate::wday(dv_date, label = TRUE))] # to check
+session_HalfHourlyCIDT[, legend_lab := paste0("SavingSessions day: ", 
+                                              lubridate::wday(sessionDate, label = TRUE),
+                                              " ", sessionDate, " 17:30 - 18:30")]
+
+plotDT <- rbind(recent_HalfHourlyCIDT, session_HalfHourlyCIDT)
+
+plotDT[, adjusted_hms := hms::as_hms(hms + (15*60))] # ad5 15 minutes so plots at middle of half-hour for clqrity
+
+periodAlpha <- 0.3 #  shaded rects on plots
+periodFill <- "grey50"
+ymax <- max(plotDT$mean_kWh_elec)
+ymin <- min(plotDT$mean_kWh_elec)
+
+ggplot2::ggplot(plotDT, aes(x = adjusted_hms, y = mean_CI, 
+                            colour = legend_lab)) +
+  geom_line() +
+  geom_point() +
+  annotate("rect", xmin = xmin,
+           xmax = xmax,
+           ymin = ymin, ymax = ymax,
+           alpha = periodAlpha, fill = periodFill) +
+  scale_color_discrete(name = "Legend") +
+  theme(legend.position = "bottom") +
   labs(x = "Time of day",
        y = "Mean carbon intensity (g CO2e/kWh)",
        caption = "Data: @OctopusEnergy & @NationalGridESO \nPlot: @dataknut\nPoints plotted at middle of half-hour for clarity")
@@ -420,8 +566,8 @@ Figure \@ref(fig:plotTotalElecImportDaily) shows the total daily kWh import with
 
 ```{r plotTotalElecImportDaily, fig.cap="Mean half-hourly electricity import per day (kWh, current year)"}
 plotDT <- elecCons_dt[, .(sum_kWh = sum(consumption_kWh),
-                 mean_kWh = mean(consumption_kWh),
-                 nObs = .N), keyby = .(dv_date, dv_weekend)]
+                          mean_kWh = mean(consumption_kWh),
+                          nObs = .N), keyby = .(dv_date, dv_weekend)]
 
 ggplot2::ggplot(plotDT, aes(x = dv_date, y = sum_kWh, 
                             colour = dv_weekend)) +
@@ -441,15 +587,15 @@ Figure \@ref(fig:plotElecImportDailyByPeriod) shows the mean daily kWh import wi
 ```{r checkPeriods}
 # check periods
 t <- elecCons_dt[, .(min = min(dv_hms),
-                max = max(dv_hms)),
-            keyby = .(dv_peakPeriod)]
+                     max = max(dv_hms)),
+                 keyby = .(dv_peakPeriod)]
 t
 
 t <- elecCons_dt[, .(mean_kWh = mean(consumption_kWh),
-                sd_kWh = sd(consumption_kWh),
-                min_kWh = min(consumption_kWh),
-                max_kWh = max(consumption_kWh)),
-            keyby = .(dv_peakPeriod)]
+                     sd_kWh = sd(consumption_kWh),
+                     min_kWh = min(consumption_kWh),
+                     max_kWh = max(consumption_kWh)),
+                 keyby = .(dv_peakPeriod)]
 makeFlexTable(t, digits = 3, cap = "Summary stats (all half-hourly data)")
 ```
 
@@ -457,15 +603,15 @@ makeFlexTable(t, digits = 3, cap = "Summary stats (all half-hourly data)")
 ```{r plotElecImportDailyByPeriod, fig.cap="Mean half-hourly electricity import (kWh) by peak period (current year)"}
 
 plotDT <- elecCons_dt[, .(sum_kWh = sum(consumption_kWh),
-                 mean_kWh = mean(consumption_kWh),
-                 nObs = .N), keyby = .(dv_date, dv_peakPeriod)]
+                          mean_kWh = mean(consumption_kWh),
+                          nObs = .N), keyby = .(dv_date, dv_peakPeriod)]
 totalDT <- elecCons_dt[, .(sum_kWh = sum(consumption_kWh),
-                 mean_kWh = mean(consumption_kWh),
-                 nObs = .N), keyby = .(dv_date)]
+                           mean_kWh = mean(consumption_kWh),
+                           nObs = .N), keyby = .(dv_date)]
 totalDT[, dv_peakPeriod := "All periods"]
 
 plotDT <- rbind(plotDT, totalDT)
-  
+
 ggplot2::ggplot(plotDT, aes(x = dv_date, y = mean_kWh, 
                             colour = dv_peakPeriod)) +
   geom_line() +
@@ -480,11 +626,11 @@ ggplot2::ggplot(plotDT, aes(x = dv_date, y = mean_kWh,
 
 What's happening here?
 
- * we have PV (but not a lot) -> summer `Day time`
- * we switched from a gas hob to induction in July -> `evening peak`
- * we got rid of a freezer with a bad seal in July (-> `early morning baseload`) and also swapped a built-in fridge-freezer for a stand-alone fridge (& freezer)
- * we set the hot water circulation loop to 'just in time' (`morning peak`). Well, kind of. Might affect the gas more.
- 
+* we have PV (but not a lot) -> summer `Day time`
+* we switched from a gas hob to induction in July -> `evening peak`
+* we got rid of a freezer with a bad seal in July (-> `early morning baseload`) and also swapped a built-in fridge-freezer for a stand-alone fridge (& freezer)
+* we set the hot water circulation loop to 'just in time' (`morning peak`). Well, kind of. Might affect the gas more.
+
 ### PV generation
 
 Not Octopus data - irregular reads by us. Load from .xslsx
@@ -503,10 +649,10 @@ pvGen_DT[, dv_date := lubridate::as_datetime(Date)]
 pvGen_DT[, month := lubridate::month(dv_date)]
 
 monthlyPvGen_DT <- pvGen_DT[, .(hh_meankWh = mean(meankWhGen)/48 # input value is mean per day
-                                   ),
-                              keyby = .(month = lubridate::month(dv_date),
-                                        year = lubridate::year(dv_date))
-                              ]
+),
+keyby = .(month = lubridate::month(dv_date),
+          year = lubridate::year(dv_date))
+]
 monthlyPvGen_DT[, value := "PV generation"]
 
 monthlyElec_DT <- elecCons_dt[, .(hh_meankWh = mean(consumption_kWh)),
@@ -551,9 +697,9 @@ We also con't avoid the 'Well To Tank' emissions and those associated with trans
 
 To further complicate things there are at least two different ways to estimate our emissions.
 
- * use the annual BEIS emissions factor and multiply by the kWh in question - be it half-hourly, daily, annual, whatever. That's the simple way.
- * use the NG-ESO half-hourly emissions factors which reflect the generation mix (with some caveats) of the grid at half-hourly intervals
- 
+* use the annual BEIS emissions factor and multiply by the kWh in question - be it half-hourly, daily, annual, whatever. That's the simple way.
+* use the NG-ESO half-hourly emissions factors which reflect the generation mix (with some caveats) of the grid at half-hourly intervals
+
 `Does it matter?` you cry. Well it might. If we've been able to 'flex' our usage in line with \@[theBakingForecast](https://twitter.com/baking4cast) then who knows, maybe we'll be concentrating our usage in times when the grid is actually drawing on more renewables.
 
 So let's take a look. We'll do both the BEIS-based and NG-ESO based calculations to see. For now we'll ignore the WTT and the T&D losses to keep the results comparable. We'll come back to that later.
@@ -602,7 +748,7 @@ ggplot2::ggplot(elecCons_dt, aes(x = CARBON_INTENSITY, y = consumption_kWh, colo
   geom_smooth() +
   scale_color_continuous(name = "% renewables", low = "red", high = "green") +
   theme(legend.position = "bottom") +
-    labs(y = "Halfhourly electricity kWh")
+  labs(y = "Halfhourly electricity kWh")
 
 ```
 
@@ -667,8 +813,8 @@ If we compare the monthly values we can see the biggest difference was in Februa
 
 Analyse costs using:
 
- * tariff up to 21/11/2022 - £0.2408 /kWh & £0.2401 /day (All rates inc. VAT)
- * tariff from 22/11/2022 https://octopus.energy/blog/energy-price-cap-oct-2022/#flexibleoct22rates (_Eastern_)
+* tariff up to 21/11/2022 - £0.2408 /kWh & £0.2401 /day (All rates inc. VAT)
+* tariff from 22/11/2022 https://octopus.energy/blog/energy-price-cap-oct-2022/#flexibleoct22rates (_Eastern_)
 
 The latter are slightly different from the assumed to be at UK price cap: £0.34 / kWh & £0.46 ( see [Ofgem](https://www.ofgem.gov.uk/information-consumers/energy-advice-households/check-if-energy-price-cap-affects-you))
 
@@ -805,8 +951,8 @@ Figure \@ref(fig:plotGasImportDaily) shows the mean daily kWh import with a smoo
 
 ```{r plotGasImportDaily, fig.cap="Daily gas consumption (current year)"}
 plotDT <- gasCons_dt[, .(sum_kWh = sum(consumption_kWh),
-                 mean_kWh = mean(consumption_kWh),
-                 nObs = .N), keyby = .(dv_date)]
+                         mean_kWh = mean(consumption_kWh),
+                         nObs = .N), keyby = .(dv_date)]
 
 ggplot2::ggplot(plotDT, aes(x = dv_date, y = sum_kWh)) +
   geom_point() +
@@ -816,8 +962,8 @@ ggplot2::ggplot(plotDT, aes(x = dv_date, y = sum_kWh)) +
        y = "Sum kWh per day")
 
 plotDT <- gasCons_dt[, .(sum_kWh = sum(consumption_kWh),
-                 mean_kWh = mean(consumption_kWh),
-                 nObs = .N), keyby = .(dv_date, dv_weekend)]
+                         mean_kWh = mean(consumption_kWh),
+                         nObs = .N), keyby = .(dv_date, dv_weekend)]
 
 ggplot2::ggplot(plotDT, aes(x = dv_date, y = sum_kWh, 
                             colour = dv_weekend)) +
@@ -851,8 +997,8 @@ Figure \@ref(fig:plotGasImportDailyByPeriod) shows the mean daily kWh import wit
 ```{r plotGasImportDailyByPeriod, fig.cap="Daily gas consumption by peak period (current year)"}
 
 plotDT <- gasCons_dt[, .(sum_kWh = sum(consumption_kWh),
-                 mean_kWh = mean(consumption_kWh),
-                 nObs = .N), keyby = .(dv_date, dv_peakPeriod, dv_weekend)]
+                         mean_kWh = mean(consumption_kWh),
+                         nObs = .N), keyby = .(dv_date, dv_peakPeriod, dv_weekend)]
 
 ggplot2::ggplot(plotDT, aes(x = dv_date, y = mean_kWh, 
                             colour = dv_peakPeriod)) +
@@ -881,7 +1027,7 @@ For 2021 this is: `r rmdParams$BEIS_gas_ci` Kg CO2e/kWh
 ```{r gasEmissionsTotal}
 gasCons_dt[, KgCO2_beis := consumption_kWh * rmdParams$BEIS_gas_ci] 
 t <- gasCons_dt[, .(sumkWh = sum(consumption_kWh),
-                     sumKgCO2_beis = sum(KgCO2_beis))]
+                    sumKgCO2_beis = sum(KgCO2_beis))]
 
 makeFlexTable(t, cap = "Emissions estimation using gas kWh to date")
 ```
@@ -890,28 +1036,28 @@ makeFlexTable(t, cap = "Emissions estimation using gas kWh to date")
 
 Analyse costs using:
 
- * tariff up to 21/11/2022 - £0.0719 /kWh & £0.261 /day (All rates inc. VAT)
- * tariff from 22/11/2022 https://octopus.energy/blog/energy-price-cap-oct-2022/#flexibleoct22rates (_Eastern_)
+* tariff up to 21/11/2022 - £0.0719 /kWh & £0.261 /day (All rates inc. VAT)
+* tariff from 22/11/2022 https://octopus.energy/blog/energy-price-cap-oct-2022/#flexibleoct22rates (_Eastern_)
 
 The latter are (currently) the same as the at UK price cap: £0.1031 / kWh & £0.2684 ( see [Ofgem](https://www.ofgem.gov.uk/information-consumers/energy-advice-households/check-if-energy-price-cap-affects-you))
 
 Yes, I know I can extract our exact tariff from the octopus API...
- 
+
 ```{r gasTotal}
 
 
 t <- gasCons_dt[, .(nDays = uniqueN(dv_date),
-                     sumkWh = sum(consumption_kWh),
-                     halfHourly_meankWh = mean(consumption_kWh)),
-                 keyby = .(month = lubridate::month(dv_date))]
+                    sumkWh = sum(consumption_kWh),
+                    halfHourly_meankWh = mean(consumption_kWh)),
+                keyby = .(month = lubridate::month(dv_date))]
 
 makeFlexTable(t, cap = "Monthly stats")
 message("Total gas to date")
 sum(t$sumkWh)
 
 t <- gasCons_dt[, .(nDays = uniqueN(dv_date),
-                     sumkWh = sum(consumption_kWh)),
-                 keyby = .(dv_date)]
+                    sumkWh = sum(consumption_kWh)),
+                keyby = .(dv_date)]
 
 message("#### 2022 pre-cap price ####")
 prices$gas_kWh <- 0.0719
@@ -946,8 +1092,8 @@ Monthly estimated costs (averaged over 12 months to guide monthly payment value)
 
 These use [the latest Octopus flexible tariff from Oct 2022](https://octopus.energy/blog/energy-price-cap-oct-2022/#flexibleoct22rates) which are protected ny the government's Energy Price Guarantee:
 
- * electricity: £`r round(prices$elec_kWh,2)` / kWh and £`r round(prices$elec_sc,2)` / day (standing charge) 
- * gas: £`r round(prices$gas_kWh,2)` / kWh and £`r round(prices$gas_sc,2)` / day (standing charge)
+* electricity: £`r round(prices$elec_kWh,2)` / kWh and £`r round(prices$elec_sc,2)` / day (standing charge) 
+* gas: £`r round(prices$gas_kWh,2)` / kWh and £`r round(prices$gas_sc,2)` / day (standing charge)
 
 ```{r totalCosts}
 
