@@ -502,13 +502,16 @@ makeFlexTable(wt[, hms:= as.factor(hms)], cap = "kWh comparisons (hms = half hou
 ```
 
 > What do we conclude? 
+
 > Cost centre #3 rushed home to get a toastie & his laundry in before 17:30 and then went to rugby training
+
 > Cost centre #4 just went to the gym
+
 > Our dinner guest was happy to delay cooking & eating slightly
 
 For fun - Figure \@ref(fig:thirdSavingSessionsCI) shows the mean carbon intensity in g CO2(e) per kWh for each half-hour.
 
-```{r thirdSavingSessionsCI, fig.cap="First #SavingSessions - comparison of carbon intensity"}
+```{r thirdSavingSessionsCI, fig.cap="Third #SavingSessions - comparison of carbon intensity"}
 
 ngeso_dt_orig[, dv_date := lubridate::date(dv_start)]
 ngeso_dt_orig[, dv_hms := hms::as_hms(dv_start)]
