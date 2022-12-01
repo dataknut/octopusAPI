@@ -122,7 +122,7 @@ See below
 
 We save this locally, if it is older than 1 day we re-download.
 
-```{r setNGESOelec}
+```{r getNGESOelec}
 # this needs to be more clever - only download dates we want from API?
 esoF <- here::here("data", "latest_df_fuel_ckan.csv")
 if(file.exists(paste0(esoF, ".gz"))){
@@ -153,6 +153,9 @@ if(today - lastNGESO > 1) {
   data.table::fwrite(ngeso_dt_orig, esoF)
   dkUtils::gzipIt(esoF)
 }
+
+ngeso_dt_orig[, dv_date := lubridate::date(dv_start)]
+ngeso_dt_orig[, dv_hms := hms::as_hms(dv_start)]
 
 # we think renewable is wind + solar, low carbon includes nuclear
 #ggplot2::ggplot(t, aes(x = RENEWABLE_perc, y = LOW_CARBON_perc)) +
@@ -298,133 +301,157 @@ makeFlexTable(t, digits = 2,
 
 > Can we [flex](https://twitter.com/tom_rushby/status/1589653290609913856) any of the above for £3/kWh?
 
-Instigated by Uk National gird, implemented (in our case) by Octopus- https://twitter.com/SavingSessions
+Instigated by UK National gird, implemented (in our case) by Octopus- https://twitter.com/SavingSessions
 
 #### 15th Nov 2022
 
-17:00 - 18:00 £2.50/kWh
+> 17:00 - 18:00 £2.50/kWh
 
-Figure \@ref(fig:firstSavingSessionsUsage) shows how we did in the first #SavingSessions compared to the last n similar days of the week.
+Figure \@ref(fig:firstSavingSessionsUsage) shows how we did in the first #SavingSessions **compared to the last n similar days of the week over the last 2 months**.
 
 > NB: this is not the Octopus algorithm, they use the previous usage across all days (?)
 
 ```{r firstSavingSessionsUsage, fig.cap="First #SavingSessions - how did we do?"}
-sessionDateStart <- "2022-11-15 17:00:00" # the half-hour it starts
-sessionDateEnd <- "2022-11-15 17:30:00" # the half-hour it ends (makes data selection easier)
+startDateTime <- "2022-11-15 17:00:00" # the half-hour it starts
+endDateTime <- "2022-11-15 17:30:00" # the half-hour it ends (makes data selection easier)
 
-sessionDay <- lubridate::wday(sessionDateStart, label = TRUE) # you'll see why
-sessionDate <- lubridate::date(sessionDateStart) # you'll see why
+make_kwhComparisonPlot <- function(dt, # half hourly smart meter data
+                                   startDateTime, endDateTime){
+  res <- list() # results holder
+  
+  sessionDay <- lubridate::wday(startDateTime, label = TRUE) # you'll see why
+  sessionDate <- lubridate::date(endDateTime) # you'll see why
+  
+  compare_HalfHourlyDT <- dt[dv_date != sessionDate & # not the session day
+                               lubridate::wday(dv_date, label = TRUE) == sessionDay & # same day of the week
+                               dv_date > sessionDate - 60 # 2 months
+  ] # to check
+  compare_HalfHourlyDT[, wday := lubridate::wday(dv_date, label = TRUE)]
+  nComparisonDays <- uniqueN(compare_HalfHourlyDT$dv_date)
+  
+  res$nCompDays <- nComparisonDays
+  
+  recent_HalfHourlyDT <- compare_HalfHourlyDT[,
+                                              .(mean_kWh_elec = mean(consumption_kWh)), 
+                                              keyby = .(hms = dv_hms,
+                                                        wday)] # to check
+  recent_HalfHourlyDT[, legend_lab := paste0("Comparison mean kWh")]
+  
+  session_HalfHourlyDT <- elecCons_dt[dv_date == lubridate::date(startDateTime),  #  the session day
+                                      .(mean_kWh_elec = mean(consumption_kWh)), 
+                                      keyby = .(hms = dv_hms,
+                                                wday = lubridate::wday(dv_date, label = TRUE))] # to check
+  session_HalfHourlyDT[, legend_lab := "SavingSession kWh"]
+  
+  plotDT <- rbind(recent_HalfHourlyDT, session_HalfHourlyDT)
+  
+  plotDT[, adjusted_hms := hms::as_hms(hms + (15*60))]
+  
+  periodAlpha <- 0.3 #  shaded rects on plots
+  periodFill <- "grey50"
+  ymax <- max(plotDT$mean_kWh_elec)
+  ymin <- min(plotDT$mean_kWh_elec)
+  xmin <- hms::as_hms(lubridate::as_datetime(startDateTime))
+  xmax <- hms::as_hms(lubridate::as_datetime(endDateTime)) + 30*60 # to allow for the start time
+  
+  res$p <- ggplot2::ggplot(plotDT, aes(x = adjusted_hms, y = mean_kWh_elec, 
+                                       colour = legend_lab)) +
+    geom_line() +
+    geom_point() +
+    annotate("rect", xmin = xmin,
+             xmax = xmax,
+             ymin = ymin, ymax = ymax,
+             alpha = periodAlpha, fill = periodFill) +
+    scale_color_discrete(name = "Legend") +
+    theme(legend.position = "bottom") +
+    labs(x = "Time of day",
+         y = "Mean kWh per half-hour",
+         caption = paste0("Data: @OctopusEnergy\nPlot: @dataknut\nPoints plotted at middle of half-hour for clarity\nNumber of number of comparison days: ", res$nCompDays)
+    )
+  
+  t <- plotDT[hms >= xmin & hms < xmax]
+  
+  wt <- dcast(t[, .(hms, wday, mean_kWh_elec, legend_lab)], hms ~ legend_lab, value.var = "mean_kWh_elec")
+  
+  wt[, kwh_diff := `SavingSession kWh` - `Comparison mean kWh`]
+  res$wt <- wt[, pc_diff := 100*(kwh_diff/`Comparison mean kWh`)]
+  
+  
+  return(res)
+}
 
-compare_HalfHourlyDT <- elecCons_dt[dv_date != sessionDate & # not the session day
-                                      lubridate::wday(dv_date, label = TRUE) == sessionDay & # same day of the week
-                                      dv_date > sessionDate - 60 # 2 months
-] # to check
-compare_HalfHourlyDT[, wday := lubridate::wday(dv_date, label = TRUE)]
-nComparisonDays <- uniqueN(compare_HalfHourlyDT$dv_date)
+res <- make_kwhComparisonPlot(elecCons_dt, startDateTime, endDateTime)
+res$p # the plot
 
-recent_HalfHourlyDT <- compare_HalfHourlyDT[,
-                                            .(mean_kWh_elec = mean(consumption_kWh)), 
-                                            keyby = .(hms = dv_hms,
-                                                      wday)] # to check
-recent_HalfHourlyDT[, legend_lab := paste0("Mean of the previous ", nComparisonDays, " ", lubridate::wday(sessionDate, label = TRUE, abbr = FALSE), "s")]
-
-session_HalfHourlyDT <- elecCons_dt[dv_date == lubridate::date(sessionDateStart),  #  the session day
-                                    .(mean_kWh_elec = mean(consumption_kWh)), 
-                                    keyby = .(hms = dv_hms,
-                                              wday = lubridate::wday(dv_date, label = TRUE))] # to check
-session_HalfHourlyDT[, legend_lab := paste0("SavingSessions day: ", 
-                                            lubridate::wday(sessionDate, label = TRUE),
-                                            " ", sessionDate, " 17:00 - 18:00")]
-
-plotDT <- rbind(recent_HalfHourlyDT, session_HalfHourlyDT)
-
-plotDT[, adjusted_hms := hms::as_hms(hms + (15*60))]
-
-periodAlpha <- 0.3 #  shaded rects on plots
-periodFill <- "grey50"
-ymax <- max(plotDT$mean_kWh_elec)
-ymin <- min(plotDT$mean_kWh_elec)
-xmin <- hms::as_hms(lubridate::as_datetime(sessionDateStart))
-xmax <- hms::as_hms(lubridate::as_datetime(sessionDateEnd)) + 30*60 # to allow for the start time
-
-ggplot2::ggplot(plotDT, aes(x = adjusted_hms, y = mean_kWh_elec, 
-                            colour = legend_lab)) +
-  geom_line() +
-  geom_point() +
-  annotate("rect", xmin = xmin,
-           xmax = xmax,
-           ymin = ymin, ymax = ymax,
-           alpha = periodAlpha, fill = periodFill) +
-  scale_color_discrete(name = "Legend") +
-  theme(legend.position = "bottom") +
-  labs(x = "Time of day",
-       y = "Mean kWh per half-hour",
-       caption = "Data: @OctopusEnergy\nPlot: @dataknut\nPoints plotted at middle of half-hour for clarity")
-
-t <- plotDT[hms >= xmin & hms < xmax]
-
-wt <- dcast(t[, .(hms, wday, mean_kWh_elec, legend_lab)], hms ~ legend_lab, value.var = "mean_kWh_elec")
-
-wt[, kwh_diff := `SavingSessions day: Tue 2022-11-15 17:00 - 18:00` - `Mean of the previous 10 Tuesdays`]
-wt[, pc_diff := 100*(kwh_diff/`Mean of the previous 10 Tuesdays`)]
-
-makeFlexTable(wt[, hms:= as.factor(hms)], cap = "kWh comparisons (hms = half hour period start", digits = 3)
+makeFlexTable(res$wt[, hms:= as.factor(hms)], 
+              cap = paste0("kWh comparisons (hms = half hour period start, number of comparison days = ", res$nCompDays,")"),
+              digits = 3) # the table
 ```
 
-> What do we conclude? For a complicated set of pre-Xmas prep reasons (and poor institutional memory) our electricity usage in the late afternoon was much *higher* than usual on the session day. As a result our actions only brought usage down to 'average' for this time on a Tuesday (so we won't win any points). But as a result our usage was probably **way lower** than it otherwise would have been judging by the spikes before and after. So if it really had been a critical peak event, we would have been helping the system but not being rewarded...
+> What do we conclude? 
+
+> For a complicated set of pre-Xmas prep reasons (and poor institutional memory) our electricity usage in the late afternoon was much *higher* than usual on the session day. As a result our actions only brought usage down to 'average' for this time on a Tuesday (so we won't win any points). But as a result our usage was probably **way lower** than it otherwise would have been judging by the spikes before and after. So if it really had been a critical peak event, we would have been helping the system but not being rewarded...
 
 For fun - Figure \@ref(fig:firstSavingSessionsCI) shows the mean carbon intensity in g CO2(e) per kWh for each half-hour.
 
 ```{r firstSavingSessionsCI, fig.cap="First #SavingSessions - comparison of carbon intensity"}
 
-ngeso_dt_orig[, dv_date := lubridate::date(dv_start)]
-ngeso_dt_orig[, dv_hms := hms::as_hms(dv_start)]
+make_ciComparisonPlot <- function(dt, startDateTime, endDateTime){
+  res <- list() # results list
+  
+  sessionDay <- lubridate::wday(startDateTime, label = TRUE) # you'll see why
+  sessionDate <- lubridate::date(endDateTime) # you'll see why
+  
+  compare_HalfHourlyCIDT <- dt[dv_start != sessionDate & # not the session day
+                                 lubridate::wday(dv_date, label = TRUE) == sessionDay & # same day of the week
+                                 dv_date > sessionDate - 60 # 2 months
+  ] # to check
+  compare_HalfHourlyCIDT[, wday := lubridate::wday(dv_date, label = TRUE)]
+  nComparisonDays <- uniqueN(compare_HalfHourlyCIDT$dv_date)
+  
+  recent_HalfHourlyCIDT <- compare_HalfHourlyCIDT[,
+                                                  .(mean_CI = mean(CARBON_INTENSITY)), 
+                                                  keyby = .(hms = dv_hms,
+                                                            wday)] # to check
+  
+  recent_HalfHourlyCIDT[, legend_lab := "Comparison mean kg CO2/kWh"]
+  
+  session_HalfHourlyCIDT <- dt[dv_date == lubridate::date(startDateTime),  #  the session day
+                               .(mean_CI = mean(CARBON_INTENSITY)), 
+                               keyby = .(hms = dv_hms,
+                                         wday = lubridate::wday(dv_date, label = TRUE))] # to check
+  session_HalfHourlyCIDT[, legend_lab := paste0("SavingSessions kg CO2/kWh")]
+  
+  plotDT <- rbind(recent_HalfHourlyCIDT, session_HalfHourlyCIDT)
+  
+  plotDT[, adjusted_hms := hms::as_hms(hms + (15*60))] # ad5 15 minutes so plots at middle of half-hour for clqrity
+  
+  periodAlpha <- 0.3 #  shaded rects on plots
+  periodFill <- "grey50"
+  ymax <- max(plotDT$mean_CI)
+  ymin <- min(plotDT$mean_CI)
+  xmin <- hms::as_hms(lubridate::as_datetime(startDateTime))
+  xmax <- hms::as_hms(lubridate::as_datetime(endDateTime)) + 30*60 # to allow for the start time
+  
+  res$p <- ggplot2::ggplot(plotDT, aes(x = adjusted_hms, y = mean_CI, 
+                                       colour = legend_lab)) +
+    geom_line() +
+    geom_point() +
+    annotate("rect", xmin = xmin,
+             xmax = xmax,
+             ymin = ymin, ymax = ymax,
+             alpha = periodAlpha, fill = periodFill) +
+    scale_color_discrete(name = "Legend") +
+    theme(legend.position = "bottom") +
+    labs(x = "Time of day",
+         y = "Mean carbon intensity (g CO2e/kWh)",
+         caption = paste0("Data: @OctopusEnergy & @NationalGridESO \nPlot: @dataknut\nPoints plotted at middle of half-hour for clarity\nNumber of comparator days = ", nComparisonDays)
+    )
+  return(res)
+}
 
-compare_HalfHourlyCIDT <- ngeso_dt_orig[dv_start != sessionDate & # not the session day
-                                          lubridate::wday(dv_date, label = TRUE) == sessionDay & # same day of the week
-                                          dv_date > sessionDate - 60 # 2 months
-] # to check
-compare_HalfHourlyCIDT[, wday := lubridate::wday(dv_date, label = TRUE)]
-nComparisonDays <- uniqueN(compare_HalfHourlyCIDT$dv_date)
-
-recent_HalfHourlyCIDT <- compare_HalfHourlyCIDT[,
-                                                .(mean_CI = mean(CARBON_INTENSITY)), 
-                                                keyby = .(hms = dv_hms,
-                                                          wday)] # to check
-
-recent_HalfHourlyCIDT[, legend_lab := paste0("Mean of the previous ", nComparisonDays, " ", lubridate::wday(sessionDate, label = TRUE, abbr = FALSE), "s")]
-
-session_HalfHourlyCIDT <- ngeso_dt_orig[dv_date == lubridate::date(sessionDateStart),  #  the session day
-                                        .(mean_CI = mean(CARBON_INTENSITY)), 
-                                        keyby = .(hms = dv_hms,
-                                                  wday = lubridate::wday(dv_date, label = TRUE))] # to check
-session_HalfHourlyCIDT[, legend_lab := paste0("SavingSessions day: ", 
-                                              lubridate::wday(sessionDate, label = TRUE),
-                                              " ", sessionDate, " 17:00 - 18:00")]
-
-plotDT <- rbind(recent_HalfHourlyCIDT, session_HalfHourlyCIDT)
-
-plotDT[, adjusted_hms := hms::as_hms(hms + (15*60))] # ad5 15 minutes so plots at middle of half-hour for clqrity
-
-periodAlpha <- 0.3 #  shaded rects on plots
-periodFill <- "grey50"
-ymax <- max(plotDT$mean_kWh_elec)
-ymin <- min(plotDT$mean_kWh_elec)
-
-ggplot2::ggplot(plotDT, aes(x = adjusted_hms, y = mean_CI, 
-                            colour = legend_lab)) +
-  geom_line() +
-  geom_point() +
-  annotate("rect", xmin = hms::as_hms("17:00:00"),
-           xmax = hms::as_hms("18:00:00"),
-           ymin = ymin, ymax = ymax,
-           alpha = periodAlpha, fill = periodFill) +
-  scale_color_discrete(name = "Legend") +
-  theme(legend.position = "bottom") +
-  labs(x = "Time of day",
-       y = "Mean carbon intensity (g CO2e/kWh)",
-       caption = "Data: @OctopusEnergy & @NationalGridESO \nPlot: @dataknut\nPoints plotted at middle of half-hour for clarity")
-
+res <- make_ciComparisonPlot(ngeso_dt_orig, startDateTime, endDateTime)
+res$p
 
 ```
 
@@ -434,71 +461,22 @@ skipped this one
 
 #### 30th Nov 2022
 
-17:30 - 18:30 £2.50/kWh
+> 17:30 - 18:30 £2.50/kWh
 
-Figure \@ref(fig:thirdSavingSessionsUsage) shows how we did in the first #SavingSessions compared to the last 8 similar days of the week.
+Figure \@ref(fig:thirdSavingSessionsUsage) shows how we did in the third #SavingSessions compared to the last n similar days of the week.
 
 ```{r thirdSavingSessionsUsage, fig.cap="Third #SavingSessions - how did we do?"}
-sessionDateStart <- "2022-11-30 17:30:00" # the half-hour it starts
-sessionDateEnd <- "2022-11-30 18:00:00" # the half-hour it ends (makes data selection easier)
+startDateTime <- "2022-11-30 17:30:00" # the half-hour it starts
+endDateTime <- "2022-11-30 18:00:00" # the half-hour it ends (makes data selection easier)
 
-sessionDay <- lubridate::wday(sessionDateStart, label = TRUE) # you'll see why
-sessionDate <- lubridate::date(sessionDateStart) # you'll see why
 
-compare_HalfHourlyDT <- elecCons_dt[dv_date != sessionDate & # not the session day
-                                      lubridate::wday(dv_date, label = TRUE) == sessionDay & # same day of the week
-                                      dv_date > sessionDate - 60 # 2 months
-] # to check
-compare_HalfHourlyDT[, wday := lubridate::wday(dv_date, label = TRUE)]
-nComparisonDays <- uniqueN(compare_HalfHourlyDT$dv_date)
 
-recent_HalfHourlyDT <- compare_HalfHourlyDT[,
-                                            .(mean_kWh_elec = mean(consumption_kWh)), 
-                                            keyby = .(hms = dv_hms,
-                                                      wday)] # to check
-recent_HalfHourlyDT[, legend_lab := paste0("Mean of the previous ", nComparisonDays, " ", lubridate::wday(sessionDate, label = TRUE, abbr = FALSE), "s")]
+res <- make_kwhComparisonPlot(elecCons_dt, startDateTime, endDateTime)
+res$p # the plot
 
-session_HalfHourlyDT <- elecCons_dt[dv_date == lubridate::date(sessionDateStart),  #  the session day
-                                    .(mean_kWh_elec = mean(consumption_kWh)), 
-                                    keyby = .(hms = dv_hms,
-                                              wday = lubridate::wday(dv_date, label = TRUE))] # to check
-session_HalfHourlyDT[, legend_lab := paste0("SavingSessions day: ", 
-                                            lubridate::wday(sessionDate, label = TRUE),
-                                            " ", sessionDate, " 17:30 - 18:30")]
-
-plotDT <- rbind(recent_HalfHourlyDT, session_HalfHourlyDT)
-
-plotDT[, adjusted_hms := hms::as_hms(hms + (15*60))]
-
-periodAlpha <- 0.3 #  shaded rects on plots
-periodFill <- "grey50"
-ymax <- max(plotDT$mean_kWh_elec)
-ymin <- min(plotDT$mean_kWh_elec)
-xmin <- hms::as_hms(lubridate::as_datetime(sessionDateStart))
-xmax <- hms::as_hms(lubridate::as_datetime(sessionDateEnd)) + 30*60 # to allow for the start time
-
-ggplot2::ggplot(plotDT, aes(x = adjusted_hms, y = mean_kWh_elec, 
-                            colour = legend_lab)) +
-  geom_line() +
-  geom_point() +
-  annotate("rect", xmin = xmin,
-           xmax = xmax,
-           ymin = ymin, ymax = ymax,
-           alpha = periodAlpha, fill = periodFill) +
-  scale_color_discrete(name = "Legend") +
-  theme(legend.position = "bottom") +
-  labs(x = "Time of day",
-       y = "Mean kWh per half-hour",
-       caption = "Data: @OctopusEnergy\nPlot: @dataknut\nPoints plotted at middle of half-hour for clarity")
-
-t <- plotDT[hms >= xmin & hms < xmax]
-
-wt <- dcast(t[, .(hms, wday, mean_kWh_elec, legend_lab)], hms ~ legend_lab, value.var = "mean_kWh_elec")
-
-wt[, kwh_diff := `SavingSessions day: Wed 2022-11-30 17:30 - 18:30` - `Mean of the previous 8 Wednesdays`]
-wt[, pc_diff := 100*(kwh_diff/`Mean of the previous 8 Wednesdays`)]
-
-makeFlexTable(wt[, hms:= as.factor(hms)], cap = "kWh comparisons (hms = half hour period start", digits = 3)
+makeFlexTable(res$wt[, hms:= as.factor(hms)], 
+              cap = paste0("kWh comparisons (hms = half hour period start, number of comparison days = ", res$nCompDays,")"),
+              digits = 3) # the table
 ```
 
 > What do we conclude? 
@@ -513,53 +491,8 @@ For fun - Figure \@ref(fig:thirdSavingSessionsCI) shows the mean carbon intensit
 
 ```{r thirdSavingSessionsCI, fig.cap="Third #SavingSessions - comparison of carbon intensity"}
 
-ngeso_dt_orig[, dv_date := lubridate::date(dv_start)]
-ngeso_dt_orig[, dv_hms := hms::as_hms(dv_start)]
-
-compare_HalfHourlyCIDT <- ngeso_dt_orig[dv_start != sessionDate & # not the session day
-                                          lubridate::wday(dv_date, label = TRUE) == sessionDay & # same day of the week
-                                          dv_date > sessionDate - 60 # 2 months
-] # to check
-compare_HalfHourlyCIDT[, wday := lubridate::wday(dv_date, label = TRUE)]
-nComparisonDays <- uniqueN(compare_HalfHourlyCIDT$dv_date)
-
-recent_HalfHourlyCIDT <- compare_HalfHourlyCIDT[,
-                                                .(mean_CI = mean(CARBON_INTENSITY)), 
-                                                keyby = .(hms = dv_hms,
-                                                          wday)] # to check
-
-recent_HalfHourlyCIDT[, legend_lab := paste0("Mean of the previous ", nComparisonDays, " ", lubridate::wday(sessionDate, label = TRUE, abbr = FALSE), "s")]
-
-session_HalfHourlyCIDT <- ngeso_dt_orig[dv_date == lubridate::date(sessionDateStart),  #  the session day
-                                        .(mean_CI = mean(CARBON_INTENSITY)), 
-                                        keyby = .(hms = dv_hms,
-                                                  wday = lubridate::wday(dv_date, label = TRUE))] # to check
-session_HalfHourlyCIDT[, legend_lab := paste0("SavingSessions day: ", 
-                                              lubridate::wday(sessionDate, label = TRUE),
-                                              " ", sessionDate, " 17:30 - 18:30")]
-
-plotDT <- rbind(recent_HalfHourlyCIDT, session_HalfHourlyCIDT)
-
-plotDT[, adjusted_hms := hms::as_hms(hms + (15*60))] # ad5 15 minutes so plots at middle of half-hour for clqrity
-
-periodAlpha <- 0.3 #  shaded rects on plots
-periodFill <- "grey50"
-ymax <- max(plotDT$mean_kWh_elec)
-ymin <- min(plotDT$mean_kWh_elec)
-
-ggplot2::ggplot(plotDT, aes(x = adjusted_hms, y = mean_CI, 
-                            colour = legend_lab)) +
-  geom_line() +
-  geom_point() +
-  annotate("rect", xmin = xmin,
-           xmax = xmax,
-           ymin = ymin, ymax = ymax,
-           alpha = periodAlpha, fill = periodFill) +
-  scale_color_discrete(name = "Legend") +
-  theme(legend.position = "bottom") +
-  labs(x = "Time of day",
-       y = "Mean carbon intensity (g CO2e/kWh)",
-       caption = "Data: @OctopusEnergy & @NationalGridESO \nPlot: @dataknut\nPoints plotted at middle of half-hour for clarity")
+res <- make_ciComparisonPlot(ngeso_dt_orig, startDateTime, endDateTime)
+res$p
 ```
 
 
