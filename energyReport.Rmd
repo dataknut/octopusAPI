@@ -142,10 +142,11 @@ if(file.exists(paste0(esoF, ".gz"))){
 
 # if older than 12 hours, reload
 maxGRID <- max(ngeso_dt_orig$dv_start)
+today <- lubridate::today()
 
 if((lubridate::now() - maxGRID) > 0.5){
   # old data, reload
-  message("But the version we have dates from ", lastNGESO, " (",today - lastNGESO ," days ago), downloading latest...")
+  message("But the version we have dates from ", maxGRID, " (", today - maxGRID ," days ago), downloading latest...")
   ngeso_dt_orig <- data.table::fread("https://data.nationalgrideso.com/backend/dataset/88313ae5-94e4-4ddc-a790-593554d8c6b9/resource/f93d1835-75bc-43e5-84ad-12472b180a98/download/df_fuel_ckan.csv")
   # nice dateTime
   ngeso_dt_orig[, dv_start := lubridate::as_datetime(DATETIME)]
