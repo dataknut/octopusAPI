@@ -140,11 +140,10 @@ if(file.exists(paste0(esoF, ".gz"))){
   dkUtils::gzipIt("~/Dropbox/data/UK_NGESO/genMix/latest_df_fuel_ckan.csv")
 }
 
-# if older than 1 day, reload
-today <- lubridate::today()
-lastNGESO <- as.Date(max(ngeso_dt_orig$dv_start))
+# if older than 12 hours, reload
+maxGRID <- max(ngeso_dt_orig$dv_start)
 
-if(today - lastNGESO > 1) {
+if((lubridate::now() - maxGRID) > 0.5){
   # old data, reload
   message("But the version we have dates from ", lastNGESO, " (",today - lastNGESO ," days ago), downloading latest...")
   ngeso_dt_orig <- data.table::fread("https://data.nationalgrideso.com/backend/dataset/88313ae5-94e4-4ddc-a790-593554d8c6b9/resource/f93d1835-75bc-43e5-84ad-12472b180a98/download/df_fuel_ckan.csv")
@@ -469,8 +468,6 @@ Figure \@ref(fig:thirdSavingSessionsUsage) shows how we did in the third #Saving
 startDateTime <- "2022-11-30 17:30:00" # the half-hour it starts
 endDateTime <- "2022-11-30 18:00:00" # the half-hour it ends (makes data selection easier)
 
-
-
 res <- make_kwhComparisonPlot(elecCons_dt, startDateTime, endDateTime)
 res$p # the plot
 
@@ -495,6 +492,39 @@ res <- make_ciComparisonPlot(ngeso_dt_orig, startDateTime, endDateTime)
 res$p
 ```
 
+#### 1st Dec 2022
+
+> 17:00 - 18:00 £2.50/kWh
+
+Figure \@ref(fig:fourthSavingSessionsUsage) shows how we did in this #SavingSession compared to the last n similar days of the week.
+
+```{r fourthSavingSessionsUsage, fig.cap="Fourth #SavingSessions - how did we do?"}
+startDateTime <- "2022-12-01 17:00:00" # the half-hour it starts
+endDateTime <- "2022-12-01 17:30:00" # the half-hour it ends (makes data selection easier)
+
+res <- make_kwhComparisonPlot(elecCons_dt, startDateTime, endDateTime)
+res$p # the plot
+
+makeFlexTable(res$wt[, hms:= as.factor(hms)], 
+              cap = paste0("kWh comparisons (hms = half hour period start, number of comparison days = ", res$nCompDays,")"),
+              digits = 3) # the table
+```
+
+> What do we conclude? 
+
+> Cost centre #3 didn't come home at all until 22:00
+
+> Cost centre #4 went to the gym and cooked with Cost centre #3 at 22:00
+
+> Our 2nd dinner guest of the week was also happy to delay cooking & eating slightly!
+
+For fun - Figure \@ref(fig:fourthSavingSessionsCI) shows the mean carbon intensity in g CO2(e) per kWh for each half-hour.
+
+```{r fourthSavingSessionsCI, fig.cap="Third #SavingSessions - comparison of carbon intensity"}
+
+res <- make_ciComparisonPlot(ngeso_dt_orig, startDateTime, endDateTime)
+res$p
+```
 
 ### Daily analysis
 
