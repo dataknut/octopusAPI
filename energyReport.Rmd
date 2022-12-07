@@ -32,6 +32,7 @@ rmdLibs <- c("data.table",
              "jsonlite",
              "lubridate",
              "plotly",
+             "readxl",
              "skimr")
 dkUtils::loadLibraries(rmdLibs)
 
@@ -141,10 +142,10 @@ if(file.exists(paste0(esoF, ".gz"))){
 }
 
 # if older than 12 hours, reload
-maxGRID <- max(ngeso_dt_orig$dv_start)
+maxGRID <- lubridate::as_date(max(ngeso_dt_orig$dv_start))
 today <- lubridate::today()
 
-if((lubridate::now() - maxGRID) > 0.5){
+if((today - maxGRID) > 1){
   # old data, reload
   message("But the version we have dates from ", maxGRID, " (", today - maxGRID ," days ago), downloading latest...")
   ngeso_dt_orig <- data.table::fread("https://data.nationalgrideso.com/backend/dataset/88313ae5-94e4-4ddc-a790-593554d8c6b9/resource/f93d1835-75bc-43e5-84ad-12472b180a98/download/df_fuel_ckan.csv")
@@ -295,6 +296,8 @@ t <- dcast(recent_dt, dv_date + dow ~ dv_peakPeriod, val.var = sum_kWh_elec)
 t <- t[daily_totals]
 makeFlexTable(t, digits = 2,
               cap = "Recent electricity use")
+
+daily_totals[, fuel := "elec"]  # for future use
 ```
 
 ### Winter 2022 SavingsSessions
@@ -785,49 +788,107 @@ Analyse costs using:
 
 The latter are slightly different from the assumed to be at UK price cap: £0.34 / kWh & £0.46 ( see [Ofgem](https://www.ofgem.gov.uk/information-consumers/energy-advice-households/check-if-energy-price-cap-affects-you))
 
+```{r setCosts}
+prices <- readxl::read_xlsx(here::here("data", "prices.xlsx"))
+pricesDT <- data.table::as.data.table(prices)
+```
+
 Yes, I know I can extract our exact tariff from the octopus API...
 
+```{r dailyElecCosts, fig.cap="Daily electricity costs"}
+daily_elec <- elecCons_dt[, .(sum_kWh = sum(consumption_kWh),
+                           nObs = .N), keyby = .(dv_date)]
+
+# extract from pricesDT
+# must be an easier way
+
+daily_elec[, kwh_p := ifelse(dv_date < lubridate::as_date("2022-11-21"),
+                               pricesDT[fuel == "elec" & component == "kWh" &
+                  dateEnd == "2022-11-21", price],
+                               pricesDT[fuel == "elec" & component == "kWh" &
+                  dateStart == "2022-11-22", price])]
+daily_elec[, sc_p := ifelse(dv_date < lubridate::as_date("2022-11-21"),
+                               pricesDT[fuel == "elec" & component == "sc" &
+                  dateEnd == "2022-11-21", price],
+                               pricesDT[fuel == "elec" & component == "sc" &
+                  dateStart == "2022-11-22", price])]
+
+daily_elec[, cost := ((sum_kWh * kwh_p) + sc_p)]
+daily_elec[, month := lubridate::month(dv_date, label = TRUE)]
+
+ggplot2::ggplot(daily_elec, aes(x = dv_date, y = cost, colour = month)) +
+  geom_line() +
+  geom_smooth() +
+  geom_vline(xintercept = lubridate::as_date("2022-11-21")) +
+  labs(y = "Daily cost £",
+       caption = "Tariff change/price cap/EPG 2022 date shown\nSmoothed within month")
+```
+
+```{r monthlyElecCost, fig.cap="Monthly electricity costs"}
+daily_elec[, month_floor := lubridate::floor_date(dv_date, "months")]
+monthly_elec <- daily_elec[, .(sum_kWh = sum(sum_kWh),
+                               cost = sum(cost)),
+                           keyby = .(month_floor)]
+
+ggplot2::ggplot(monthly_elec, aes(x = month_floor, y = cost)) +
+  geom_col() +
+  geom_vline(xintercept = lubridate::as_date("2022-11-21")) +
+  labs(y = "Monthly cost £",
+       x = "Month", 
+       caption = "Tariff change/price cap/EPG 2022 date shown\nBeware incomplete months")
+```
+
+
 ```{r elecTotal}
-t <- elecCons_dt[, .(nDays = uniqueN(dv_date),
-                     sumkWh = sum(consumption_kWh),
-                     hh_meankWh = mean(consumption_kWh),
-                     hh_minkWh = min(consumption_kWh),
-                     hh_maxkWh = max(consumption_kWh)),
-                 keyby = .(month = lubridate::month(dv_date))]
 
-makeFlexTable(t, cap = "Monthly stats", digits = 2)
-message("Total elec to date")
-sum(t$sumkWh)
-
-t <- elecCons_dt[, .(nDays = uniqueN(dv_date),
-                     sumkWh = sum(consumption_kWh)),
-                 keyby = .(dv_date)]
-message("########")
-message("# Up to 21st Nov 2022")
-prices <- list()
-prices$elec_kWh <- 0.2408
 message("Projected annual elec total kWh")
-annualTotal <- mean(t$sumkWh)*365
-annualTotal
-prices$elec_sc <- 0.2401
-message("Projected annual elec cost @ £", prices$elec_kWh," per kWh & standing charge at ", prices$elec_sc, " per day")
-annualCost <- (annualTotal*prices$elec_kWh)+(365*prices$elec_sc ) # standing charge
-annualCost
-message("Mean monthly cost: £")
-annualCost/12
+projAnnual_elec_kWh <- mean(daily_elec$sum_kWh)*365
+projAnnual_elec_kWh
 
 message("########")
-message("# From to 22nd Nov 2022")
-prices$elec_kWh <- 0.3506 # higher than ofgem average rate
-prices$elec_sc <- 0.3729 # lower than ofgem average rate
-message("Projected annual elec cost @ £", prices$elec_kWh," per kWh & standing charge @ £ ", prices$elec_sc, " per day")
-annualCost_capped <- (annualTotal*prices$elec_kWh)+(365*prices$elec_sc) # standing charge
-annualCost_capped
-message("Projected mean monthly £ ")
-latestMonthlyElec <- annualCost_capped/12
-latestMonthlyElec
+message("# Prices to 21st Nov 2022")
 
-message("That's an increase of ", round(100*((annualCost_capped-annualCost)/annualCost),2),  " % points")
+# get_price <- function(dt, fuel, component, dateEnd){
+#   p <- dt[fuel == fuel &
+#             component == component &
+#             dateEnd  == dateEnd,
+#           price]
+#   return(p)
+# }
+
+kWh_p <- pricesDT[fuel == "elec" & component == "kWh" &
+                  dateEnd == "2022-11-21", price]
+sc_p <- pricesDT[fuel == "elec" & component == "sc" &
+                  dateEnd == "2022-11-21", price]
+
+message("Projected annual elec cost @ £ ", kWh_p,
+        " per kWh & standing charge at £ ", sc_p,
+        " per day")
+        
+
+projAannualCost <- (projAnnual_elec_kWh*kWh_p)+(365*sc_p) # standing charge
+projAannualCost
+message("Mean projected monthly cost: £")
+projAannualCost/12
+
+message("########")
+message("# From to 22nd Nov 2022 - prioce cap")
+kWh_p <- pricesDT[fuel == "elec" & component == "kWh" &
+                  dateStart == "2022-11-22", price]
+sc_p <- pricesDT[fuel == "elec" & component == "sc" &
+                  dateStart == "2022-11-22", price]
+
+message("Projected annual elec cost @ £ ", kWh_p,
+        " per kWh & standing charge at £ ", sc_p,
+        " per day")
+
+annualCost_elecCapped <- (projAnnual_elec_kWh*kWh_p)+(365*sc_p) # standing charge
+annualCost_elecCapped
+message("Projected mean monthly £ under price cap")
+monthlyCost_capped <- annualCost_elecCapped/12
+monthlyCost_capped
+
+message("That's an increase of ", round(100*((annualCost_elecCapped-projAannualCost)/projAannualCost),2),  " % points")
 
 ```
 
@@ -1010,73 +1071,169 @@ The latter are (currently) the same as the at UK price cap: £0.1031 / kWh & £0
 
 Yes, I know I can extract our exact tariff from the octopus API...
 
+```{r dailyGasCosts, fig.cap="Daily gas costs"}
+
+daily_gas <- gasCons_dt[, .(sum_kWh = sum(consumption_kWh),
+                           nObs = .N), keyby = .(dv_date)]
+
+# extract from pricesDT
+# must be an easier way
+
+daily_gas[, kwh_p := ifelse(dv_date < lubridate::as_date("2022-10-04"),
+                               pricesDT[fuel == "gas" & component == "kWh" &
+                  dateEnd %like% "2022-10-03", price], # why does it need to be like??
+                               pricesDT[fuel == "gas" & component == "kWh" &
+                  dateStart %like% "2022-10-04", price])]
+daily_gas[, sc_p := ifelse(dv_date < lubridate::as_date("2022-10-04"),
+                               pricesDT[fuel == "gas" & component == "sc" &
+                  dateEnd %like% "2022-10-03", price],
+                               pricesDT[fuel == "gas" & component == "sc" &
+                  dateStart %like% "2022-10-04", price])]
+
+daily_gas[, cost := ((sum_kWh * kwh_p) + sc_p)]
+daily_gas[, month := lubridate::month(dv_date, label = TRUE)]
+
+ggplot2::ggplot(daily_gas, aes(x = dv_date, y = cost, colour = month)) +
+  geom_line() +
+  geom_smooth() +
+  geom_vline(xintercept = lubridate::as_date("2022-10-04")) +
+  labs(y = "Daily cost £",
+       caption = "Tariff change/price cap/EPG 2022 date shown\nSmoothed within month")
+
+```
+
+```{r monthlyGasCosts, fig.cap="Monthly gas costs"}
+
+daily_gas[, month_floor := lubridate::floor_date(dv_date, "months")]
+monthly_gas <- daily_gas[, .(sum_kWh = sum(sum_kWh),
+                               cost = sum(cost)),
+                           keyby = .(month_floor)]
+
+ggplot2::ggplot(monthly_gas, aes(x = month_floor, y = cost)) +
+  geom_col() +
+  geom_vline(xintercept = lubridate::as_date("2022-10-04")) +
+  labs(y = "Monthly cost £",
+       x = "Month", 
+       caption = "Tariff change/price cap/EPG 2022 date shown\nBeware incomplete months")
+```
+
+
+
 ```{r gasTotal}
 
 
-t <- gasCons_dt[, .(nDays = uniqueN(dv_date),
-                    sumkWh = sum(consumption_kWh),
-                    halfHourly_meankWh = mean(consumption_kWh)),
-                keyby = .(month = lubridate::month(dv_date))]
+message("Projected annual gas total kWh")
+projAnnual_gas_kWh <- mean(daily_gas$sum_kWh)*365
+projAnnual_gas_kWh
 
-makeFlexTable(t, cap = "Monthly stats")
-message("Total gas to date")
-sum(t$sumkWh)
+message("########")
+message("# Prices to 10th October 2022")
 
-t <- gasCons_dt[, .(nDays = uniqueN(dv_date),
-                    sumkWh = sum(consumption_kWh)),
-                keyby = .(dv_date)]
+# get_price <- function(dt, fuel, component, dateEnd){
+#   p <- dt[fuel == fuel &
+#             component == component &
+#             dateEnd  == dateEnd,
+#           price]
+#   return(p)
+# }
 
-message("#### 2022 pre-cap price ####")
-prices$gas_kWh <- 0.0719
-prices$gas_sc <- 0.261
-message("Projected gas annual total @ ", prices$gas_kWh,"p")
-annualTotal <- mean(t$sumkWh)*365
-annualTotal
-message("Projected annual gas cost @ £", prices$gas_kWh,"/kWh andstanding charge @ £", prices$gas_sc, " /day")
-annualCost <- (annualTotal*prices$gas_kWh)+(365*prices$gas_sc) # standing charge
-annualCost
-message("Projected mean monthly gas cost (£)")
-annualCost/12
+kWh_p <- pricesDT[fuel == "gas" & component == "kWh" &
+                  dateEnd %like% "2022-10-03", price]
+sc_p <- pricesDT[fuel == "gas" & component == "sc" &
+                  dateEnd %like% "2022-10-03", price]
 
-message("#### 2022 Cap price ####")
-prices$gas_kWh <- 0.1031
-prices$gas_sc <- 0.2684
+message("Projected annual gas cost @ £ ", kWh_p,
+        " per kWh & standing charge at £ ", sc_p,
+        " per day")
+        
 
-message("Projected annual gas cost @ £", prices$gas_kWh,"/kWh - including standing charge @ £", prices$gas_sc, " /day")
-annualCost_capped <- (annualTotal*prices$gas_kWh)+(365*prices$gas_sc) # standing charge
-annualCost_capped
-message("Projected mean monthly gas cost (£)")
-latestMonthlyGas <- annualCost_capped/12
-latestMonthlyGas
+projAannualCost <- (projAnnual_gas_kWh*kWh_p)+(365*sc_p) # standing charge
+projAannualCost
+message("Mean projected monthly cost: £")
+projAannualCost/12
 
+message("########")
+message("# From 4th Oct 2022 - price cap")
+kWh_p <- pricesDT[fuel == "gas" & component == "kWh" &
+                  dateStart %like% "2022-10-04", price]
+sc_p <- pricesDT[fuel == "gas" & component == "sc" &
+                  dateStart %like% "2022-10-04", price]
 
-message("That's an increase of ", round(100*((annualCost_capped-annualCost)/annualCost),2),  " % points")
+message("Projected annual gas cost @ £ ", kWh_p,
+        " per kWh & standing charge at £ ", sc_p,
+        " per day")
+
+annualCost_gasCapped <- (projAnnual_gas_kWh*kWh_p)+(365*sc_p) # standing charge
+annualCost_gasCapped
+message("Projected mean monthly £ under price cap")
+monthlyCost_capped <- annualCost_gasCapped/12
+monthlyCost_capped
+
+message("That's an increase of ", round(100*((annualCost_gasCapped-projAannualCost)/projAannualCost),2),  " % points")
+
 ```
 
-# Total costs
+# Total energy & costs
 
 Monthly estimated costs (averaged over 12 months to guide monthly payment value).
 
-These use [the latest Octopus flexible tariff from Oct 2022](https://octopus.energy/blog/energy-price-cap-oct-2022/#flexibleoct22rates) which are protected ny the government's Energy Price Guarantee:
+These use [the latest Octopus flexible tariff from Oct 2022](https://octopus.energy/blog/energy-price-cap-oct-2022/#flexibleoct22rates) which are protected by the government's Energy Price Guarantee:
 
-* electricity: £`r round(prices$elec_kWh,2)` / kWh and £`r round(prices$elec_sc,2)` / day (standing charge) 
-* gas: £`r round(prices$gas_kWh,2)` / kWh and £`r round(prices$gas_sc,2)` / day (standing charge)
+```{r pricesTable}
+t <- pricesDT[dateStart > as.Date("2022-10-01")]
+t[, dateStart := as.Date(dateStart)]
+makeFlexTable(t, cap = "Price cap prices", digits = 3)
+```
+
+According to our EPC:
+
+ * floor area: 163 m2
+ * Air permeability 5.0 m³/h.m² (as tested)
+ * The primary energy use for this property per year is 65 kilowatt hours per square metre (kWh/m2) or `r 163*65` kWh/year (_"Primary energy use is a measure of the energy required for lighting, heating and hot water in a property"_)
+ * This property produces 1.9 tonnes of CO2 
+ * Space heating 	6511 kWh per year
+ * Water heating 	2351 kWh per year 
+ * total of `r 6511 + 2351` kWh/year
+
+First we'll compare with hot water...
+
+```{r epcComparisonsHotwater}
+message("Assume our August-September gas use is just for hot water (almost certainly always true - no gas hob and no heating on)")
+
+hw <- gasCons_dt[dv_date >= as.Date("2022-08-01") &
+                                     dv_date < as.Date("2022-10-01"), .(daily_kWh = sum(consumption_kWh),
+                                                                        nObs = .N),
+                 keyby = .(dv_date)]
+
+message("Mean daily gas use in this period = ", round(mean(hw$daily_kWh),2), " kWh")
+annualHW <- 365 * mean(hw$daily_kWh)
+message("So estimated annual gas for hot water = ", round(annualHW), " kWh (assuming constant hot water use all year round)")
+
+message("That's ", round(annualHW/2351,2), " times the EPC estimate of 2351 kWh... ")
+```
+
+And now heating...
+
+```{r epcComparisonsSpaceHeating}
+message("Assume the estimate of hot water kWh is true")
+
+message("So estimated annual gas for heating = ", round(projAnnual_gas_kWh - annualHW,2), " kWh")
+
+message("That's ", round((projAnnual_gas_kWh - annualHW)/6511,2), " times the EPC estimate of 6511 kWh... ")
+```
+
+Now switching to overall costs...
 
 ```{r totalCosts}
-
-message("# Elec monthly £:", round(latestMonthlyElec,2))
-
-message("Elec annual: £", round(12*latestMonthlyElec,2))
-
-message("# Gas monthly£:", round(latestMonthlyGas,2))
-
-message("Gas annual: £", round(12*latestMonthlyGas,2))
+message("# Total projected energy")
+message(round(projAnnual_gas_kWh + projAnnual_elec_kWh), " kWh")
+message("This is ", round(100*((projAnnual_gas_kWh + projAnnual_elec_kWh)/(65*163))), " % of our EPC 'primary energy'")
 
 message("#####")
-message("# Totals")
-message("Monthly total £:", round(latestMonthlyElec + latestMonthlyGas, 2))
+message("# Total costs")
+message("Monthly total £:", round((annualCost_gasCapped + annualCost_elecCapped)/12))
 
-annualTotalcapped <- 12 * (latestMonthlyElec + latestMonthlyGas)
+annualTotalcapped <- (annualCost_gasCapped + annualCost_elecCapped)
 
 message("Annual total £:", round(annualTotalcapped,2))
 ```
