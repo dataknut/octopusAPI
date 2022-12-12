@@ -1185,7 +1185,7 @@ t[, dateStart := as.Date(dateStart)]
 makeFlexTable(t, cap = "Price cap prices", digits = 3)
 ```
 
-According to our EPC:
+> According to our EPC:
 
  * floor area: 163 m2
  * Air permeability 5.0 m³/h.m² (as tested)
