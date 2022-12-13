@@ -344,8 +344,7 @@ make_kwhComparisonPlot <- function(dt, # half hourly smart meter data
                                       .(mean_kWh_elec = mean(consumption_kWh)), 
                                       keyby = .(hms = dv_hms,
                                                 wday = lubridate::wday(dv_date, label = TRUE))] # to check
-  session_HalfHourlyDT[, legend_lab := "SavingSession kWh"]
-  
+  session_HalfHourlyDT[, legend_lab := "Saving session kWh"]
   plotDT <- rbind(recent_HalfHourlyDT, session_HalfHourlyDT)
   
   plotDT[, adjusted_hms := hms::as_hms(hms + (15*60))]
@@ -356,6 +355,21 @@ make_kwhComparisonPlot <- function(dt, # half hourly smart meter data
   ymin <- min(plotDT$mean_kWh_elec)
   xmin <- hms::as_hms(lubridate::as_datetime(startDateTime))
   xmax <- hms::as_hms(lubridate::as_datetime(endDateTime)) + 30*60 # to allow for the start time
+  
+  t <- plotDT[hms >= xmin & hms < xmax]
+  
+  wt <- dcast(t[, .(hms, wday, mean_kWh_elec, legend_lab)], hms ~ legend_lab, value.var = "mean_kWh_elec")
+  
+  wt[, kwh_diff := `Saving session kWh` - `Comparison mean kWh`]
+  res$wt <- wt[, pc_diff := 100*(kwh_diff/`Comparison mean kWh`)]
+  
+  label <- paste0("SavingSession kWh (", 
+                  as.Date(startDateTime),
+                  ")"
+                  )
+  plotDT[, legend_lab := ifelse(legend_lab == "Saving session kWh",
+                                label,
+                                legend_lab)]
   
   res$p <- ggplot2::ggplot(plotDT, aes(x = adjusted_hms, y = mean_kWh_elec, 
                                        colour = legend_lab)) +
@@ -371,14 +385,6 @@ make_kwhComparisonPlot <- function(dt, # half hourly smart meter data
          y = "Mean kWh per half-hour",
          caption = paste0("Data: @OctopusEnergy\nPlot: @dataknut\nPoints plotted at middle of half-hour for clarity\nNumber of number of comparison days: ", res$nCompDays)
     )
-  
-  t <- plotDT[hms >= xmin & hms < xmax]
-  
-  wt <- dcast(t[, .(hms, wday, mean_kWh_elec, legend_lab)], hms ~ legend_lab, value.var = "mean_kWh_elec")
-  
-  wt[, kwh_diff := `SavingSession kWh` - `Comparison mean kWh`]
-  res$wt <- wt[, pc_diff := 100*(kwh_diff/`Comparison mean kWh`)]
-  
   
   return(res)
 }
@@ -524,11 +530,42 @@ makeFlexTable(res$wt[, hms:= as.factor(hms)],
 
 For fun - Figure \@ref(fig:fourthSavingSessionsCI) shows the mean carbon intensity in g CO2(e) per kWh for each half-hour.
 
-```{r fourthSavingSessionsCI, fig.cap="Third #SavingSessions - comparison of carbon intensity"}
+```{r fourthSavingSessionsCI, fig.cap="Fourth #SavingSessions - comparison of carbon intensity"}
 
 res <- make_ciComparisonPlot(ngeso_dt_orig, startDateTime, endDateTime)
 res$p
 ```
+
+#### 12th Dec 2022
+
+> 17:00 - 18:00 £2.50/kWh
+
+Figure \@ref(fig:fifthSavingSessionsUsage) shows how we did in this #SavingSession compared to the last n similar days of the week.
+
+```{r fifthSavingSessionsUsage, fig.cap="Fifth #SavingSessions - how did we do?"}
+startDateTime <- "2022-12-12 17:00:00" # the half-hour it starts
+endDateTime <- "2022-12-12 18:30:00" # the half-hour it ends (makes data selection easier)
+
+res <- make_kwhComparisonPlot(elecCons_dt, startDateTime, endDateTime)
+res$p # the plot
+
+makeFlexTable(res$wt[, hms:= as.factor(hms)], 
+              cap = paste0("kWh comparisons (hms = half hour period start, number of comparison days = ", res$nCompDays,")"),
+              digits = 3) # the table
+```
+
+> What do we conclude? 
+
+> Pre-planned trip to Grandma's worked well...
+
+For fun - Figure \@ref(fig:fifthSavingSessionsCI) shows the mean carbon intensity in g CO2(e) per kWh for each half-hour.
+
+```{r fifthSavingSessionsCI, fig.cap="Fifth #SavingSessions - comparison of carbon intensity"}
+
+res <- make_ciComparisonPlot(ngeso_dt_orig, startDateTime, endDateTime)
+res$p
+```
+
 
 ### Daily analysis
 
