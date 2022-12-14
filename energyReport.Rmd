@@ -1136,7 +1136,12 @@ ggplot2::ggplot(daily_gas, aes(x = dv_date, y = cost, colour = month)) +
   geom_vline(xintercept = lubridate::as_date("2022-10-04")) +
   labs(y = "Daily cost £",
        caption = "Tariff change/price cap/EPG 2022 date shown\nSmoothed within month")
+lastWeek <- max(daily_gas$dv_date) - 7
 
+makeFlexTable(daily_gas[dv_date > lastWeek, .(dv_date, 
+                                              day = lubridate::wday(dv_date, label = TRUE),
+                                              sum_kWh, nObs, cost)], digits = 2,
+              cap = "Recent daily gas cost")
 ```
 
 ```{r monthlyGasCosts, fig.cap="Monthly gas costs"}
