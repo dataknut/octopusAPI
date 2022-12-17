@@ -1217,6 +1217,32 @@ message("That's an increase of ", round(100*((annualCost_gasCapped-projAannualCo
 
 # Total energy & costs
 
+## Recent daily
+
+Partly in response to: https://twitter.com/heatpolicyrich/status/1603768675223437319
+
+Table \@ref(tab:recentTotalcosts) shows recent usage and costs using the EPG cap prices (see detail above).
+
+```{r recentTotalcosts}
+
+daily_gas[, gas_sum_kWh := sum_kWh]
+daily_gas[, gas_cost := cost]
+daily_elec[, elec_sum_kWh := sum_kWh]
+daily_elec[, elec_cost := cost]
+daily_gas[, dow := lubridate::wday(dv_date, label = TRUE)]
+daily_costs <- daily_gas[, .(dv_date, dow, gas_sum_kWh, gas_cost)][daily_elec[,.(dv_date, elec_sum_kWh, elec_cost)]]
+
+daily_costs[, total_kWh := gas_sum_kWh + elec_sum_kWh]
+daily_costs[, total_cost := gas_cost + elec_cost]
+
+t <- tail(daily_costs, 10)
+
+makeFlexTable(t, cap = "Latest daily use & cost", digits = 2)
+```
+
+
+## Monthly
+
 Monthly estimated costs (averaged over 12 months to guide monthly payment value).
 
 These use [the latest Octopus flexible tariff from Oct 2022](https://octopus.energy/blog/energy-price-cap-oct-2022/#flexibleoct22rates) which are protected by the government's Energy Price Guarantee:
