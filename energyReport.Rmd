@@ -857,7 +857,7 @@ ggplot2::ggplot(daily_elec, aes(x = dv_date, y = cost, colour = month)) +
   geom_line() +
   geom_smooth() +
   geom_vline(xintercept = lubridate::as_date("2022-11-21")) +
-  labs(y = "Daily cost £",
+  labs(y = "Electricity daily cost £",
        caption = "Tariff change/price cap/EPG 2022 date shown\nSmoothed within month")
 ```
 
@@ -1134,7 +1134,7 @@ ggplot2::ggplot(daily_gas, aes(x = dv_date, y = cost, colour = month)) +
   geom_line() +
   geom_smooth() +
   geom_vline(xintercept = lubridate::as_date("2022-10-04")) +
-  labs(y = "Daily cost £",
+  labs(y = "Gas daily cost £",
        caption = "Tariff change/price cap/EPG 2022 date shown\nSmoothed within month")
 lastWeek <- max(daily_gas$dv_date) - 7
 
