@@ -1025,7 +1025,9 @@ ggplot2::ggplot(plotDT, aes(x = dv_date, y = sum_kWh)) +
   theme(legend.position = "bottom") +
   labs(x = "Date",
        y = "Sum kWh per day")
+```
 
+```{r plotGasImportDailyWeekdays, fig.cap="Daily gas consumption (by weekday, current year)"}
 plotDT <- gasCons_dt[, .(sum_kWh = sum(consumption_kWh),
                          mean_kWh = mean(consumption_kWh),
                          nObs = .N), keyby = .(dv_date, dv_weekend)]
@@ -1221,7 +1223,7 @@ message("That's an increase of ", round(100*((annualCost_gasCapped-projAannualCo
 
 Partly in response to: https://twitter.com/heatpolicyrich/status/1603768675223437319
 
-Table \@ref(tab:recentTotalcosts) shows recent usage and costs using the EPG cap prices (see detail above).
+Table \@ref(tab:recentTotalcosts) shows recent usage and costs (see pricing detail above) while Figure \@ref(fig:totalcostsPlot) shows total cost over time.
 
 ```{r recentTotalcosts}
 
@@ -1230,7 +1232,7 @@ daily_gas[, gas_cost := cost]
 daily_elec[, elec_sum_kWh := sum_kWh]
 daily_elec[, elec_cost := cost]
 daily_gas[, dow := lubridate::wday(dv_date, label = TRUE)]
-daily_costs <- daily_gas[, .(dv_date, dow, gas_sum_kWh, gas_cost)][daily_elec[,.(dv_date, elec_sum_kWh, elec_cost)]]
+daily_costs <- daily_gas[, .(dv_date, dow, gas_sum_kWh, gas_cost, month)][daily_elec[,.(dv_date, elec_sum_kWh, elec_cost)]]
 
 daily_costs[, total_kWh := gas_sum_kWh + elec_sum_kWh]
 daily_costs[, total_cost := gas_cost + elec_cost]
@@ -1239,6 +1241,51 @@ t <- tail(daily_costs, 10)
 
 makeFlexTable(t, cap = "Latest daily use & cost", digits = 2)
 ```
+
+The following two plots are both stacked so the height if the columns shows total daily cost.
+
+```{r totalcostsPlot, fig.cap = "Total daily electricity & gas costs"}
+
+plotDT <- melt(daily_costs[, .(dv_date, gas_cost, elec_cost)], 
+               id.vars = "dv_date")
+
+plotDT[, variable := ifelse(variable == "gas_cost",
+                "Gas £", 
+                "Electricity £")]
+plotDT[, variable := factor(variable, levels=c('Electricity £', 'Gas £'))] # re-order so electricity first
+ggplot2::ggplot(plotDT, aes(x = dv_date, y = value, fill = variable)) +
+  geom_col(position = "stack") +
+  geom_smooth() +
+  geom_vline(xintercept = lubridate::as_date("2022-10-04")) +
+  labs(x = "Date",
+       y = "Gas + electricity daily cost £",
+       caption = "Tariff change/price cap/EPG 2022 date shown")
+```
+
+> We're definitely using too much gas for hot water... (no heating in summer)
+
+> Interesting missing gas data
+
+```{r, fig.cap = "Total daily electricity & gas kWh"}
+plotDT <- melt(daily_costs[, .(dv_date, gas_sum_kWh, elec_sum_kWh)], 
+               id.vars = "dv_date")
+plotDT[, variable := ifelse(variable == "gas_sum_kWh",
+                "Gas kWh", 
+                "Electricity kWh")]
+plotDT[, variable := factor(variable, levels=c('Electricity kWh', 'Gas kWh'))] # re-order so electricity first
+ggplot2::ggplot(plotDT, aes(x = dv_date, y = value, fill = variable)) +
+  geom_col(position = "stack") +
+  geom_smooth() +
+  geom_vline(xintercept = lubridate::as_date("2022-10-04")) +
+  labs(x = "Date",
+       y = "Gas + electricity daily kWh",
+       caption = "")
+
+
+
+```
+
+
 
 
 ## Monthly
