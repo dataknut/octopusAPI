@@ -833,7 +833,7 @@ pricesDT <- data.table::as.data.table(prices)
 Yes, I know I can extract our exact tariff from the octopus API...
 
 ```{r dailyElecCosts, fig.cap="Daily electricity costs"}
-daily_elec <- elecCons_dt[, .(sum_kWh = sum(consumption_kWh),
+daily_elec <- elecCons_dt[, .(sum_kWh = sum(consumption_kWh, na.rm = TRUE), # beware missing (N/A) may decrease sum
                            nObs = .N), keyby = .(dv_date)]
 
 # extract from pricesDT
@@ -859,6 +859,13 @@ ggplot2::ggplot(daily_elec, aes(x = dv_date, y = cost, colour = month)) +
   geom_vline(xintercept = lubridate::as_date("2022-11-21")) +
   labs(y = "Electricity daily cost £",
        caption = "Tariff change/price cap/EPG 2022 date shown\nSmoothed within month")
+
+lastWeek <- max(daily_elec$dv_date) - 7
+
+makeFlexTable(daily_elec[dv_date > lastWeek, .(dv_date, 
+                                              day = lubridate::wday(dv_date, label = TRUE),
+                                              sum_kWh, nObs, cost)], digits = 2,
+              cap = "Recent daily gas cost")
 ```
 
 ```{r monthlyElecCost, fig.cap="Monthly electricity costs"}
@@ -869,7 +876,7 @@ monthly_elec <- daily_elec[, .(sum_kWh = sum(sum_kWh),
 
 ggplot2::ggplot(monthly_elec, aes(x = month_floor, y = cost)) +
   geom_col() +
-  geom_vline(xintercept = lubridate::as_date("2022-11-21")) +
+  geom_vline(xintercept = lubridate::as_date("2022-11-01")) +
   labs(y = "Monthly cost £",
        x = "Month", 
        caption = "Tariff change/price cap/EPG 2022 date shown\nBeware incomplete months")
@@ -1112,7 +1119,7 @@ Yes, I know I can extract our exact tariff from the octopus API...
 
 ```{r dailyGasCosts, fig.cap="Daily gas costs"}
 
-daily_gas <- gasCons_dt[, .(sum_kWh = sum(consumption_kWh),
+daily_gas <- gasCons_dt[, .(sum_kWh = sum(consumption_kWh, na.rm = TRUE), # beware missing (N/A) may decrease sum
                            nObs = .N), keyby = .(dv_date)]
 
 # extract from pricesDT
@@ -1242,9 +1249,9 @@ t <- tail(daily_costs, 10)
 makeFlexTable(t, cap = "Latest daily use & cost", digits = 2)
 ```
 
-The following two plots are both stacked so the height if the columns shows total daily cost.
+The following two plots are both stacked so the height of the columns shows daily totals. Figure \@ref(fig:totalDailyCosts) shows total daily energy costs.
 
-```{r totalcostsPlot, fig.cap = "Total daily electricity & gas costs"}
+```{r totalDailyCosts, fig.cap = "Total daily electricity & gas costs"}
 
 plotDT <- melt(daily_costs[, .(dv_date, gas_cost, elec_cost)], 
                id.vars = "dv_date")
@@ -1255,8 +1262,10 @@ plotDT[, variable := ifelse(variable == "gas_cost",
 plotDT[, variable := factor(variable, levels=c('Electricity £', 'Gas £'))] # re-order so electricity first
 ggplot2::ggplot(plotDT, aes(x = dv_date, y = value, fill = variable)) +
   geom_col(position = "stack") +
-  geom_smooth() +
-  geom_vline(xintercept = lubridate::as_date("2022-10-04")) +
+  geom_vline(aes(xintercept = lubridate::as_date("2022-10-04"), colour = "Gas EPG applied")) +
+  geom_vline(aes(xintercept = lubridate::as_date("2022-11-21"), colour = "Electricity EPG applied")) +
+  scale_color_discrete(name = "EPG dates") +
+  scale_fill_discrete(name = "Energy source") +
   labs(x = "Date",
        y = "Gas + electricity daily cost £",
        caption = "Tariff change/price cap/EPG 2022 date shown")
@@ -1266,7 +1275,9 @@ ggplot2::ggplot(plotDT, aes(x = dv_date, y = value, fill = variable)) +
 
 > Interesting missing gas data
 
-```{r, fig.cap = "Total daily electricity & gas kWh"}
+Figure \@ref(fig:totalDailyEnergy) shows total daily kWh.
+
+```{r totalDailyEnergy, fig.cap = "Total daily electricity & gas kWh"}
 plotDT <- melt(daily_costs[, .(dv_date, gas_sum_kWh, elec_sum_kWh)], 
                id.vars = "dv_date")
 plotDT[, variable := ifelse(variable == "gas_sum_kWh",
@@ -1275,8 +1286,10 @@ plotDT[, variable := ifelse(variable == "gas_sum_kWh",
 plotDT[, variable := factor(variable, levels=c('Electricity kWh', 'Gas kWh'))] # re-order so electricity first
 ggplot2::ggplot(plotDT, aes(x = dv_date, y = value, fill = variable)) +
   geom_col(position = "stack") +
-  geom_smooth() +
-  geom_vline(xintercept = lubridate::as_date("2022-10-04")) +
+geom_vline(aes(xintercept = lubridate::as_date("2022-10-04"), colour = "Gas EPG applied")) +
+  geom_vline(aes(xintercept = lubridate::as_date("2022-11-21"), colour = "Electricity EPG applied")) +
+  scale_color_discrete(name = "EPG dates") +
+  scale_fill_discrete(name = "Energy source") +
   labs(x = "Date",
        y = "Gas + electricity daily kWh",
        caption = "")
