@@ -159,8 +159,12 @@ ngeso_dt_orig[, dv_date := lubridate::date(dv_start)]
 ngeso_dt_orig[, dv_hms := hms::as_hms(dv_start)]
 
 # we think renewable is wind + solar, low carbon includes nuclear
-#ggplot2::ggplot(t, aes(x = RENEWABLE_perc, y = LOW_CARBON_perc)) +
-#  geom_point()
+ngeso_dt_orig[, Year := lubridate::year(dv_date)]
+ggplot2::ggplot(ngeso_dt_orig, aes(x = RENEWABLE_perc, 
+                                   y = LOW_CARBON_perc,
+                                   colour = NUCLEAR_perc)) +
+  geom_point() +
+  facet_wrap(Year ~ .)
 ```
 
 
