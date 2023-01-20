@@ -596,6 +596,36 @@ res$p
 ```
 
 
+
+#### 19th Jan 2023
+
+> 09:00 - 10:00 £2.50/kWh
+
+Figure \@ref(fig:sixthSavingSessionsUsage) shows how we _did_would have done had we entered_ for this #SavingSession compared to the last n similar days of the week.
+
+```{r sixthSavingSessionsUsage, fig.cap="Sixth #SavingSessions - how would we have done?"}
+startDateTime <- "2023-01-19 09:00:00" # the half-hour it starts
+endDateTime <- "2023-01-19 09:30:00" # the half-hour it ends (makes data selection easier)
+
+res <- make_kwhComparisonPlot(elecCons_dt, startDateTime, endDateTime)
+res$p # the plot
+
+makeFlexTable(res$wt[, hms:= as.factor(hms)], 
+              cap = paste0("kWh comparisons (hms = half hour period start, number of comparison days = ", res$nCompDays,")"),
+              digits = 3) # the table
+```
+
+> What do we conclude? 
+
+For fun - Figure \@ref(fig:sixthSavingSessionsCI) shows the mean carbon intensity in g CO2(e) per kWh for each half-hour.
+
+```{r sixthSavingSessionsCI, fig.cap="Sixth #SavingSessions - comparison of carbon intensity"}
+
+res <- make_ciComparisonPlot(ngeso_dt_orig, startDateTime, endDateTime)
+res$p
+```
+
+
 ### Daily analysis
 
 Figure \@ref(fig:plotTotalElecImportDaily) shows the total daily kWh import with a smoothed curve for each day as shown.
