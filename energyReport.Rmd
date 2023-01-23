@@ -40,6 +40,8 @@ dkUtils::loadLibraries(rmdLibs)
 source("~/Dropbox/api/octopusAPI_key.R") # api params
 # DO NOT PRINT THE KEY!
 
+esoDataPath <- path.expand("~/Dropbox/data/UK_NGESO/genMix/")
+
 rmdParams <- list() # params for this report
 rmdParams$odPath <- "~/Dropbox/data/ba_octopus/" # where to save the json files
 message("Test if rmdParams$odPath (", rmdParams$odPath, ") exists...")
@@ -125,8 +127,9 @@ We save this locally, if it is older than 1 day we re-download.
 
 ```{r getNGESOelec}
 # this needs to be more clever - only download dates we want from API?
-esoF <- here::here("data", "latest_df_fuel_ckan.csv")
-if(file.exists(paste0(esoF, ".gz"))){
+esoF <- paste0(esoDataPath, "latest_df_fuel_ckan.csv")
+# check for gzipped version (see below)
+if(file.exists(paste0(esoF, ".gz"))){ 
   message("We already have a version saved to: ", paste0(esoF, ".gz"))
   message("Loading it...")
   ngeso_dt_orig <- data.table::fread(paste0(esoF, ".gz"))
@@ -135,19 +138,17 @@ if(file.exists(paste0(esoF, ".gz"))){
   ngeso_dt_orig <- data.table::fread("https://data.nationalgrideso.com/backend/dataset/88313ae5-94e4-4ddc-a790-593554d8c6b9/resource/f93d1835-75bc-43e5-84ad-12472b180a98/download/df_fuel_ckan.csv")
   # nice dateTime
   ngeso_dt_orig[, dv_start := lubridate::as_datetime(DATETIME)]
-  data.table::fwrite(ngeso_dt_orig, esoF)
+  data.table::fwrite(ngeso_dt_orig, esoF) # save locally for future re-use
   dkUtils::gzipIt(esoF)
-  data.table::fwrite(ngeso_dt_orig, "~/Dropbox/data/UK_NGESO/genMix/latest_df_fuel_ckan.csv") # save locally for future re-use
-  dkUtils::gzipIt("~/Dropbox/data/UK_NGESO/genMix/latest_df_fuel_ckan.csv")
 }
 
-# if older than 12 hours, reload
-maxGRID <- lubridate::as_date(max(ngeso_dt_orig$dv_start))
+# if older than 1 day, reload
 today <- lubridate::today()
+lastNGESO <- as.Date(max(ngeso_dt_orig$dv_start))
 
-if((today - maxGRID) > 1){
+if(today - lastNGESO > 1) {
   # old data, reload
-  message("But the version we have dates from ", maxGRID, " (", today - maxGRID ," days ago), downloading latest...")
+  message("But the version we have dates from ", lastNGESO, " (",today - lastNGESO ," days ago), downloading latest...")
   ngeso_dt_orig <- data.table::fread("https://data.nationalgrideso.com/backend/dataset/88313ae5-94e4-4ddc-a790-593554d8c6b9/resource/f93d1835-75bc-43e5-84ad-12472b180a98/download/df_fuel_ckan.csv")
   # nice dateTime
   ngeso_dt_orig[, dv_start := lubridate::as_datetime(DATETIME)]
@@ -155,14 +156,14 @@ if((today - maxGRID) > 1){
   dkUtils::gzipIt(esoF)
 }
 
+# we think renewable is wind + solar, low carbon includes nuclear
+
+ngeso_dt_orig[, dv_date := lubridate::as_date(DATETIME)] # for filtering etc
+ngeso_dt_orig[, dv_hms := hms::as_hms(DATETIME)] # for filtering etc
+
 ngEsoCap <- paste0("Source: NG-ESO generation mix data ",
                    min(ngeso_dt_orig$dv_start), " - ",
                    max(ngeso_dt_orig$dv_start))
-  
-ngeso_dt_orig[, dv_date := lubridate::date(dv_start)]
-ngeso_dt_orig[, dv_hms := hms::as_hms(dv_start)]
-
-
 
 ngeso_dt_orig[, dv_peakPeriod := ifelse(dv_hms < as_hms("07:00:00"), "Early morning", NA)]
 ngeso_dt_orig[, dv_peakPeriod := ifelse(dv_hms >= as_hms("07:00:00") & dv_hms < as_hms("09:00:00"), 
@@ -788,7 +789,7 @@ make_kwhComparisonPlot <- function(dt, # half hourly smart meter data
       theme(legend.position = "bottom") +
       labs(x = "Time of day",
            y = "Mean kWh per half-hour",
-           caption = paste0("Data: @OctopusEnergy\nPlot: @dataknut\nPoints plotted at middle of half-hour for clarity\nNumber of number of comparison days: ", res$nCompDays)
+           caption = paste0("Data: @OctopusEnergy\nPlot: @dataknut\nPoints plotted at middle of half-hour for clarity\nNumber of comparison days: ", res$nCompDays)
       )
     
     return(res)
@@ -806,68 +807,6 @@ makeFlexTable(res$wt[, hms:= as.factor(hms)],
 
 > For a complicated set of pre-Xmas prep reasons (and poor institutional memory) our electricity usage in the late afternoon was much *higher* than usual on the session day. As a result our actions only brought usage down to 'average' for this time on a Tuesday (so we won't win any points). But as a result our usage was probably **way lower** than it otherwise would have been judging by the spikes before and after. So if it really had been a critical peak event, we would have been helping the system but not being rewarded...
 
-For fun - Figure \@ref(fig:firstSavingSessionsCI) shows the mean carbon intensity in g CO2(e) per kWh for each half-hour.
-
-```{r firstSavingSessionsCI, fig.cap="First #SavingSessions - comparison of carbon intensity"}
-
-make_ciComparisonPlot <- function(dt, startDateTime, endDateTime){
-  res <- list() # results list
-  
-  sessionDay <- lubridate::wday(startDateTime, label = TRUE) # you'll see why
-  sessionDate <- lubridate::date(endDateTime) # you'll see why
-  
-  compare_HalfHourlyCIDT <- dt[dv_start != sessionDate & # not the session day
-                                 lubridate::wday(dv_date, label = TRUE) == sessionDay & # same day of the week
-                                 dv_date > sessionDate - 60 # 2 months
-  ] # to check
-  compare_HalfHourlyCIDT[, wday := lubridate::wday(dv_date, label = TRUE)]
-  nComparisonDays <- uniqueN(compare_HalfHourlyCIDT$dv_date)
-  
-  recent_HalfHourlyCIDT <- compare_HalfHourlyCIDT[,
-                                                  .(mean_CI = mean(CARBON_INTENSITY)), 
-                                                  keyby = .(hms = dv_hms,
-                                                            wday)] # to check
-  
-  recent_HalfHourlyCIDT[, legend_lab := "Comparison mean kg CO2/kWh"]
-  
-  session_HalfHourlyCIDT <- dt[dv_date == lubridate::date(startDateTime),  #  the session day
-                               .(mean_CI = mean(CARBON_INTENSITY)), 
-                               keyby = .(hms = dv_hms,
-                                         wday = lubridate::wday(dv_date, label = TRUE))] # to check
-  session_HalfHourlyCIDT[, legend_lab := paste0("SavingSessions kg CO2/kWh")]
-  
-  plotDT <- rbind(recent_HalfHourlyCIDT, session_HalfHourlyCIDT)
-  
-  plotDT[, adjusted_hms := hms::as_hms(hms + (15*60))] # ad5 15 minutes so plots at middle of half-hour for clqrity
-  
-  periodAlpha <- 0.3 #  shaded rects on plots
-  periodFill <- "grey50"
-    ymax <- max(plotDT$mean_CI)
-    ymin <- min(plotDT$mean_CI)
-    xmin <- hms::as_hms(lubridate::as_datetime(startDateTime))
-    xmax <- hms::as_hms(lubridate::as_datetime(endDateTime)) + 30*60 # to allow for the start time
-    
-    res$p <- ggplot2::ggplot(plotDT, aes(x = adjusted_hms, y = mean_CI, 
-                                         colour = legend_lab)) +
-      geom_line() +
-      geom_point() +
-      annotate("rect", xmin = xmin,
-               xmax = xmax,
-               ymin = ymin, ymax = ymax,
-               alpha = periodAlpha, fill = periodFill) +
-      scale_color_discrete(name = "Legend") +
-      theme(legend.position = "bottom") +
-      labs(x = "Time of day",
-           y = "Mean carbon intensity (g CO2e/kWh)",
-           caption = paste0("Data: @OctopusEnergy & @NationalGridESO \nPlot: @dataknut\nPoints plotted at middle of half-hour for clarity\nNumber of comparator days = ", nComparisonDays)
-      )
-    return(res)
-}
-
-res <- make_ciComparisonPlot(ngeso_dt_orig, startDateTime, endDateTime)
-res$p
-
-```
 
 #### 22nd Nov 2022
 
@@ -899,14 +838,6 @@ makeFlexTable(res$wt[, hms:= as.factor(hms)],
 
 > Our dinner guest was happy to delay cooking & eating slightly
 
-For fun - Figure \@ref(fig:thirdSavingSessionsCI) shows the mean carbon intensity in g CO2(e) per kWh for each half-hour.
-
-```{r thirdSavingSessionsCI, fig.cap="Third #SavingSessions - comparison of carbon intensity"}
-
-res <- make_ciComparisonPlot(ngeso_dt_orig, startDateTime, endDateTime)
-res$p
-```
-
 #### 1st Dec 2022
 
 > 17:00 - 18:00 £2.50/kWh
@@ -933,14 +864,6 @@ makeFlexTable(res$wt[, hms:= as.factor(hms)],
 
 > Our 2nd dinner guest of the week was also happy to delay cooking & eating slightly!
 
-For fun - Figure \@ref(fig:fourthSavingSessionsCI) shows the mean carbon intensity in g CO2(e) per kWh for each half-hour.
-
-```{r fourthSavingSessionsCI, fig.cap="Fourth #SavingSessions - comparison of carbon intensity"}
-
-res <- make_ciComparisonPlot(ngeso_dt_orig, startDateTime, endDateTime)
-res$p
-```
-
 #### 12th Dec 2022
 
 > 17:00 - 18:00 £2.50/kWh
@@ -963,15 +886,6 @@ makeFlexTable(res$wt[, hms:= as.factor(hms)],
 
 > Pre-planned trip to Grandma's worked well...
 
-For fun - Figure \@ref(fig:fifthSavingSessionsCI) shows the mean carbon intensity in g CO2(e) per kWh for each half-hour.
-
-```{r fifthSavingSessionsCI, fig.cap="Fifth #SavingSessions - comparison of carbon intensity"}
-
-res <- make_ciComparisonPlot(ngeso_dt_orig, startDateTime, endDateTime)
-res$p
-```
-
-
 
 #### 19th Jan 2023
 
@@ -993,15 +907,30 @@ makeFlexTable(res$wt[, hms:= as.factor(hms)],
 
 > What do we conclude? 
 
-For fun - Figure \@ref(fig:sixthSavingSessionsCI) shows the mean carbon intensity in g CO2(e) per kWh for each half-hour.
 
-```{r sixthSavingSessionsCI, fig.cap="Sixth #SavingSessions - comparison of carbon intensity"}
+#### 23rd Jan 2023
 
-res <- make_ciComparisonPlot(ngeso_dt_orig, startDateTime, endDateTime)
-res$p
+> 17:00 - 18:00 £3.37 per kilowatt hour
+
+Figure \@ref(fig:seventhSavingSessionsUsage) shows how we did in this #SavingSession compared to the last n similar days of the week.
+
+```{r seventhSavingSessionsUsage, fig.cap="Seventh #SavingSessions - how did we do?"}
+startDateTime <- "2023-01-23 17:00:00" # the half-hour it starts
+endDateTime <- "2023-01-23 17:30:00" # the half-hour it ends (makes data selection easier)
+
+if(as.Date(startDateTime) < Sys.Date()){
+  res <- make_kwhComparisonPlot(elecCons_dt, startDateTime, endDateTime)
+  res$p # the plot
+  
+  makeFlexTable(res$wt[, hms:= as.factor(hms)], 
+                cap = paste0("kWh comparisons (hms = half hour period start, number of comparison days = ", res$nCompDays,")"),
+                digits = 3) # the table
+} else {
+  message("Data not yet available, try later :-(")
+}
 ```
 
-
+> What do we conclude? 
 
 ## Gas 'Consumption' (aka `use`)
 
