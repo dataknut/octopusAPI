@@ -333,6 +333,19 @@ daily_totals[, fuel := "elec"]  # for future use
 
 ### Daily analysis
 
+```{r plotTotalElecImportDailyRecent, fig.cap="Mean half-hourly electricity import per day (kWh, last 2 weeks)"}
+
+plotDT <- elecCons_dt[dv_date > Sys.Date()-14, .(sum_kWh = sum(consumption_kWh),
+                          mean_kWh = mean(consumption_kWh),
+                          nObs = .N), keyby = .(dv_date)]
+
+ggplot2::ggplot(plotDT, aes(x = dv_date, y = sum_kWh)) +
+  geom_col() +
+  #facet_grid(dv_peakPeriod ~ .) +
+  labs(x = "Date",
+       y = "Daily kWh")
+```
+
 Figure \@ref(fig:plotTotalElecImportDaily) shows the total daily kWh import with a smoothed curve for each day as shown.
 
 ```{r plotTotalElecImportDaily, fig.cap="Mean half-hourly electricity import per day (kWh, current year)"}
@@ -1288,6 +1301,18 @@ ggplot2::ggplot(plotDT, aes(x = dv_date, y = value, fill = variable)) +
 ```
 
 
+```{r totalDailyEnergyRecent, fig.cap = "Total daily electricity & gas kWh (last 14 days)"}
+
+ggplot2::ggplot(plotDT[dv_date > Sys.Date() - 14], aes(x = dv_date, y = value, colour = variable)) +
+  geom_line() +
+  scale_colour_discrete(name = "Energy source") +
+  labs(x = "Date",
+       y = "Gas + electricity daily kWh",
+       caption = "")
+
+
+
+```
 
 
 ### Monthly
