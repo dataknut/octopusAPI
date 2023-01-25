@@ -829,11 +829,16 @@ Figure \@ref(fig:firstSavingSessionsUsage) shows how we did in the first #Saving
 
 res <- make_kwhComparisonPlot(elecCons_dt, startDateTime, endDateTime)
 res$p # the plot
+
+  totalSavingKWh <- sum(res$wt$kwh_diff)
+  totalSavingGBP <- round(sum(res$wt$kwh_diff) * gbp_rate,2)
+  
+  sumSavings <- totalSavingGBP
 ```
 
-Total saving: `r sum(res$wt$kwh_diff)` kWh
+Total saving: `r totalSavingKWh` kWh
 
-Total prize: £ `r round(sum(res$wt$kwh_diff) * gbp_rate,2)`
+Total prize: £ `r totalSavingGBP`
 
 ```{r}
 makeFlexTable(res$wt[, hms:= as.factor(hms)], 
@@ -868,18 +873,21 @@ Figure \@ref(fig:thirdSavingSessionsUsage) shows how we did in the third #Saving
 ```{r thirdSavingSessionsUsage, fig.cap="Third #SavingSessions - how did we do?"}
 res <- make_kwhComparisonPlot(elecCons_dt, startDateTime, endDateTime)
 res$p # the plot
+
+totalSavingKWh <- sum(res$wt$kwh_diff)
+totalSavingGBP <- round(sum(res$wt$kwh_diff) * gbp_rate,2)
+  
+sumSavings <- totalSavingGBP + sumSavings
 ```
 
 > What do we conclude? 
 
+ * Total saving: `r totalSavingKWh` kWh
+ * Total prize: £ `r totalSavingGBP`
  * Cost centre #3 rushed home to get a toastie & his laundry in on the 30@30 cycle before 17:00 and then went to rugby training
  * Cost centre #4 just went to the gym
  * Our dinner guest was happy to delay cooking & eating slightly
  
-Total saving: `r sum(res$wt$kwh_diff)` kWh
-
-Total prize: £ `r round(sum(res$wt$kwh_diff) * gbp_rate,2)`
-
 ```{r}
 makeFlexTable(res$wt[, hms:= as.factor(hms)], 
               cap = paste0("kWh comparisons (hms = half hour period start, comparison = ", res$nCompDays," previous days"),
@@ -1043,7 +1051,7 @@ if(as.Date(startDateTime) < Sys.Date()-1){ # data only available 24 hours later
 
  * Going for a [deer stalk](https://www.strava.com/activities/8440640672) worked a treat
  * We can't do much about the baseline...
- * As we've seen on previous sessions, our (cooking) 'peak' is usually c. 19:00 so these sessions are a bit early for us - they don't coincide with peak! Our 16:00 pick-up will be the heating/gas boiler pump.
+ * As we've seen on previous sessions, our (cooking) 'peak' is usually c. 19:00 so these sessions are a bit early for us - they don't coincide with peak! Our 16:00 pick-up might be the heating/gas boiler pump but more likely it is tea & cake time :-)
 
 Total saving: `r totalSavingKWh` kWh
 
@@ -1078,7 +1086,7 @@ periodStr <- paste0(pdt(startDateTime), " - ", strftime(lubridate::as_datetime(e
 Figure \@ref(fig:eighthSavingSessionsUsage) shows how we did in this #SavingSession compared to the last n similar days of the week.
 
 ```{r eighthSavingSessionsUsage, fig.cap="Eighth #SavingSessions - how did we do?"}
-if(as.Date(startDateTime) < Sys.Date()-1){ # data only available 24 hours later
+if(as.Date(startDateTime) < Sys.Date()){ # octopus data only available for day before
   data <- TRUE
   res <- make_kwhComparisonPlot(elecCons_dt, 
                                 startDateTime, endDateTime)
@@ -1097,7 +1105,9 @@ if(as.Date(startDateTime) < Sys.Date()-1){ # data only available 24 hours later
 
 > What do we conclude? 
 
- * 
+ * not bad - again we're hitting baseline
+ * no sign of the boiler pump uptick at 4 so it must be tea & cake (which was earlier today :-)
+ * cost centre 3 came home & cooked at 21:30...
  
 Total saving: `r totalSavingKWh` kWh
 
