@@ -727,46 +727,50 @@ Instigated by UK National gird, implemented (in our case) by Octopus- https://tw
 
 #### 15th Nov 2022
 
-> 17:00 - 18:00 £2.50/kWh
-
-Figure \@ref(fig:firstSavingSessionsUsage) shows how we did in the first #SavingSessions **compared to the last n similar days of the week over the last 2 months**.
-
-> NB: this is not the Octopus algorithm, they use the previous usage across all days (?)
-
-```{r firstSavingSessionsUsage, fig.cap="First #SavingSessions - how did we do?"}
+```{r}
 startDateTime <- "2022-11-15 17:00:00" # the half-hour it starts
 endDateTime <- "2022-11-15 17:30:00" # the half-hour it ends (makes data selection easier)
+gbp_rate <- 2.50
+pd <- function(t){ # make a pretty date
+  strftime(t, "%a %d %b %Y")
+}
+pdt <- function(t){ # make a pretty date
+  strftime(t, "%a %d %b %Y %H:%M")
+}
+periodStr <- paste0(pdt(startDateTime), " - ", strftime(lubridate::as_datetime(endDateTime)+30*60, "%H:%M"))
 
+# re-usable plot function
 make_kwhComparisonPlot <- function(dt, # half hourly smart meter data
-                                   startDateTime, endDateTime){
+                                   startDateTime, # start
+                                   endDateTime, # end
+                                   timeLag = 10){ # n days to compare against 
   res <- list() # results holder
   
-  sessionDay <- lubridate::wday(startDateTime, label = TRUE) # you'll see why
   sessionDate <- lubridate::date(endDateTime) # you'll see why
   
-  compare_HalfHourlyDT <- dt[dv_date != sessionDate & # not the session day
-                               lubridate::wday(dv_date, label = TRUE) == sessionDay & # same day of the week
-                               dv_date > sessionDate - 60 # 2 months
-  ] # to check
-  compare_HalfHourlyDT[, wday := lubridate::wday(dv_date, label = TRUE)]
-  nComparisonDays <- uniqueN(compare_HalfHourlyDT$dv_date)
+  baseline_meanHalfHourlyDT <- dt[dv_date != sessionDate & # not the session day
+                               #lubridate::wday(dv_date, label = TRUE) == sessionDay & # same day of the week
+                               dv_date > sessionDate - (timeLag + 1) & # n days before
+                               dv_date < sessionDate, # not after the session
+                                                .(mean_kWh_elec = mean(consumption_kWh),
+                                                  minDate = min(dv_date),
+                                                  maxDate = max(dv_date)), 
+                                                keyby = .(hms = dv_hms)]
+  res$nCompDays <- timeLag
   
-  res$nCompDays <- nComparisonDays
+  baseline_meanHalfHourlyDT[, legend_lab := paste0("Comparison mean")]
   
-  recent_HalfHourlyDT <- compare_HalfHourlyDT[,
-                                              .(mean_kWh_elec = mean(consumption_kWh)), 
-                                              keyby = .(hms = dv_hms,
-                                                        wday)] # to check
-  recent_HalfHourlyDT[, legend_lab := paste0("Comparison mean kWh")]
-  
+  # extract session day
   session_HalfHourlyDT <- elecCons_dt[dv_date == lubridate::date(startDateTime),  #  the session day
-                                      .(mean_kWh_elec = mean(consumption_kWh)), 
-                                      keyby = .(hms = dv_hms,
-                                                wday = lubridate::wday(dv_date, label = TRUE))] # to check
-  session_HalfHourlyDT[, legend_lab := "Saving session kWh"]
-  plotDT <- rbind(recent_HalfHourlyDT, session_HalfHourlyDT)
+                                      .(mean_kWh_elec = mean(consumption_kWh),
+                                                  minDate = min(dv_date),
+                                                  maxDate = max(dv_date)), 
+                                      keyby = .(hms = dv_hms)]
+  session_HalfHourlyDT[, legend_lab := "Saving session"]
   
-  plotDT[, adjusted_hms := hms::as_hms(hms + (15*60))]
+  plotDT <- rbind(baseline_meanHalfHourlyDT, session_HalfHourlyDT)
+  
+  plotDT[, adjusted_hms := hms::as_hms(hms + (15*60))] # plots points in centre of half-hour period for clarity
   
   periodAlpha <- 0.3 #  shaded rects on plots
   periodFill <- "grey50"
@@ -775,18 +779,19 @@ make_kwhComparisonPlot <- function(dt, # half hourly smart meter data
     xmin <- hms::as_hms(lubridate::as_datetime(startDateTime))
     xmax <- hms::as_hms(lubridate::as_datetime(endDateTime)) + 30*60 # to allow for the start time
     
+    # make the table before we muck about for the plot
     t <- plotDT[hms >= xmin & hms < xmax]
     
     wt <- dcast(t[, .(hms, wday, mean_kWh_elec, legend_lab)], hms ~ legend_lab, value.var = "mean_kWh_elec")
     
-    wt[, kwh_diff := `Saving session kWh` - `Comparison mean kWh`]
-    res$wt <- wt[, pc_diff := 100*(kwh_diff/`Comparison mean kWh`)]
+    wt[, kwh_diff := `Saving session` - `Comparison mean`]
+    res$wt <- wt[, pc_diff := 100*(kwh_diff/`Comparison mean`)] # add to results holder for return
     
-    label <- paste0("SavingSession kWh (", 
+    label <- paste0("Saving session (", 
                     as.Date(startDateTime),
                     ")"
     )
-    plotDT[, legend_lab := ifelse(legend_lab == "Saving session kWh",
+    plotDT[, legend_lab := ifelse(legend_lab == "Saving session",
                                   label,
                                   legend_lab)]
     
@@ -798,21 +803,41 @@ make_kwhComparisonPlot <- function(dt, # half hourly smart meter data
                xmax = xmax,
                ymin = ymin, ymax = ymax,
                alpha = periodAlpha, fill = periodFill) +
-      scale_color_discrete(name = "Legend") +
+      scale_color_manual(name = "Legend", values=c('grey', 'red')) + # this should always make comparison grey
       theme(legend.position = "bottom") +
       labs(x = "Time of day",
            y = "Mean kWh per half-hour",
-           caption = paste0("Data: @OctopusEnergy\nPlot: @dataknut\nPoints plotted at middle of half-hour for clarity\nNumber of comparison days: ", res$nCompDays)
+           caption = paste0("Data: @OctopusEnergy\nPlot: @dataknut\nPoints centered in half-hours for clarity\nComparison = ", res$nCompDays," previous days (",
+                            pd(min(baseline_meanHalfHourlyDT$minDate)), " - ",
+                                pd(max(baseline_meanHalfHourlyDT$maxDate)), ")"
+                            )
       )
     
     return(res)
 }
+```
+
+> From `r periodStr`
+
+> Rate: £`r gbp_rate`/kWh
+
+Figure \@ref(fig:firstSavingSessionsUsage) shows how we did in the first #SavingSessions **compared to the last 10 days**.
+
+> NB: this may not be quite the same as the Octopus algorithm
+
+```{r firstSavingSessionsUsage, fig.cap="First #SavingSessions - how did we do?"}
 
 res <- make_kwhComparisonPlot(elecCons_dt, startDateTime, endDateTime)
 res$p # the plot
+```
 
+Total saving: `r sum(res$wt$kwh_diff)` kWh
+
+Total prize: £ `r round(sum(res$wt$kwh_diff) * gbp_rate,2)`
+
+```{r}
 makeFlexTable(res$wt[, hms:= as.factor(hms)], 
-              cap = paste0("kWh comparisons (hms = half hour period start, number of comparison days = ", res$nCompDays,")"),
+              cap = paste0("kWh comparisons (hms = half hour period start, comparison = ", res$nCompDays," previous days)"),
               digits = 3) # the table
 ```
 
@@ -827,123 +852,267 @@ skipped this one
 
 #### 30th Nov 2022
 
-> 17:30 - 18:30 £2.50/kWh
+```{r}
+startDateTime <- "2022-11-30 17:30:00" # the half-hour it starts
+endDateTime <- "2022-11-30 18:00:00" # the half-hour it ends (makes data selection easier)
+gbp_rate <- 2.50
+periodStr <- paste0(pdt(startDateTime), " - ", strftime(lubridate::as_datetime(endDateTime)+30*60, "%H:%M"))
+```
+
+> From `r periodStr`
+
+> Rate: £`r gbp_rate`/kWh
 
 Figure \@ref(fig:thirdSavingSessionsUsage) shows how we did in the third #SavingSessions compared to the last n similar days of the week.
 
 ```{r thirdSavingSessionsUsage, fig.cap="Third #SavingSessions - how did we do?"}
-startDateTime <- "2022-11-30 17:30:00" # the half-hour it starts
-endDateTime <- "2022-11-30 18:00:00" # the half-hour it ends (makes data selection easier)
-
 res <- make_kwhComparisonPlot(elecCons_dt, startDateTime, endDateTime)
 res$p # the plot
-
-makeFlexTable(res$wt[, hms:= as.factor(hms)], 
-              cap = paste0("kWh comparisons (hms = half hour period start, number of comparison days = ", res$nCompDays,")"),
-              digits = 3) # the table
 ```
 
 > What do we conclude? 
 
-> Cost centre #3 rushed home to get a toastie & his laundry in on the 30@30 cycle before 17:00 and then went to rugby training
+ * Cost centre #3 rushed home to get a toastie & his laundry in on the 30@30 cycle before 17:00 and then went to rugby training
+ * Cost centre #4 just went to the gym
+ * Our dinner guest was happy to delay cooking & eating slightly
+ 
+Total saving: `r sum(res$wt$kwh_diff)` kWh
 
-> Cost centre #4 just went to the gym
+Total prize: £ `r round(sum(res$wt$kwh_diff) * gbp_rate,2)`
 
-> Our dinner guest was happy to delay cooking & eating slightly
+```{r}
+makeFlexTable(res$wt[, hms:= as.factor(hms)], 
+              cap = paste0("kWh comparisons (hms = half hour period start, comparison = ", res$nCompDays," previous days"),
+              digits = 3) # the table
+```
+
+
 
 #### 1st Dec 2022
 
-> 17:00 - 18:00 £2.50/kWh
+```{r}
+startDateTime <- "2022-12-01 17:00:00" # the half-hour it starts
+endDateTime <- "2022-12-01 17:30:00" # the half-hour it ends (makes data selection easier)
+
+gbp_rate <- 2.50
+periodStr <- paste0(pdt(startDateTime), " - ", strftime(lubridate::as_datetime(endDateTime)+30*60, "%H:%M"))
+```
+
+> From `r periodStr`
+
+> Rate: £`r gbp_rate`/kWh
 
 Figure \@ref(fig:fourthSavingSessionsUsage) shows how we did in this #SavingSession compared to the last n similar days of the week.
 
 ```{r fourthSavingSessionsUsage, fig.cap="Fourth #SavingSessions - how did we do?"}
-startDateTime <- "2022-12-01 17:00:00" # the half-hour it starts
-endDateTime <- "2022-12-01 17:30:00" # the half-hour it ends (makes data selection easier)
 
 res <- make_kwhComparisonPlot(elecCons_dt, startDateTime, endDateTime)
 res$p # the plot
-
-makeFlexTable(res$wt[, hms:= as.factor(hms)], 
-              cap = paste0("kWh comparisons (hms = half hour period start, number of comparison days = ", res$nCompDays,")"),
-              digits = 3) # the table
 ```
 
 > What do we conclude? 
 
-> Cost centre #3 didn't come home at all until 22:00
+ * Cost centre #3 didn't come home at all until 22:00
+ * Cost centre #4 went to the gym and cooked with Cost centre #3 at 22:00
+ * Our 2nd dinner guest of the week was also happy to delay cooking & eating slightly!
+ * We contributed to the post-saving session surge at 18:00
+ 
+Total saving: `r sum(res$wt$kwh_diff)` kWh
 
-> Cost centre #4 went to the gym and cooked with Cost centre #3 at 22:00
+Total prize: £ `r round(sum(res$wt$kwh_diff) * gbp_rate,2)`
 
-> Our 2nd dinner guest of the week was also happy to delay cooking & eating slightly!
+```{r}
+makeFlexTable(res$wt[, hms:= as.factor(hms)], 
+              cap = paste0("kWh comparisons (hms = half hour period start, comparison = ", res$nCompDays," previous days"),
+              digits = 3) # the table
+```
+
 
 #### 12th Dec 2022
 
-> 17:00 - 18:00 £2.50/kWh
+```{r}
+startDateTime <- "2022-12-12 17:00:00" # the half-hour it starts
+endDateTime <- "2022-12-12 17:30:00" # the half-hour it ends (makes data selection easier)
+
+gbp_rate <- 2.50
+periodStr <- paste0(pdt(startDateTime), " - ", strftime(lubridate::as_datetime(endDateTime)+30*60, "%H:%M"))
+```
+
+> From `r periodStr`
+
+> Rate: £`r gbp_rate`/kWh
+
 
 Figure \@ref(fig:fifthSavingSessionsUsage) shows how we did in this #SavingSession compared to the last n similar days of the week.
 
 ```{r fifthSavingSessionsUsage, fig.cap="Fifth #SavingSessions - how did we do?"}
-startDateTime <- "2022-12-12 17:00:00" # the half-hour it starts
-endDateTime <- "2022-12-12 18:30:00" # the half-hour it ends (makes data selection easier)
-
 res <- make_kwhComparisonPlot(elecCons_dt, startDateTime, endDateTime)
 res$p # the plot
-
-makeFlexTable(res$wt[, hms:= as.factor(hms)], 
-              cap = paste0("kWh comparisons (hms = half hour period start, number of comparison days = ", res$nCompDays,")"),
-              digits = 3) # the table
 ```
 
 > What do we conclude? 
 
-> Pre-planned trip to Grandma's worked well...
+ * Pre-planned trip to Grandma's worked well...
+ * Our early December mornings were using a lot of electricity.
+ 
+Total saving: `r sum(res$wt$kwh_diff)` kWh
+
+Total prize: £ `r round(sum(res$wt$kwh_diff) * gbp_rate,2)`
+
+```{r}
+makeFlexTable(res$wt[, hms:= as.factor(hms)], 
+              cap = paste0("kWh comparisons (hms = half hour period start, comparison = ", res$nCompDays," previous days"),
+              digits = 3) # the table
+```
+
 
 
 #### 19th Jan 2023
 
-> 09:00 - 10:00 £2.50/kWh
+```{r}
+startDateTime <- "2023-01-19 09:00:00" # the half-hour it starts
+endDateTime <- "2023-01-19 09:30:00" # the half-hour it ends (makes data selection easier)
+
+gbp_rate <- 2.50
+
+periodStr <- paste0(pdt(startDateTime), " - ", strftime(lubridate::as_datetime(endDateTime)+30*60, "%H:%M"))
+```
+
+> From `r periodStr`
+
+> Rate: £`r gbp_rate`/kWh
 
 Figure \@ref(fig:sixthSavingSessionsUsage) shows how we _would have done had we entered_ for this #SavingSession compared to the last n similar days of the week.
 
 ```{r sixthSavingSessionsUsage, fig.cap="Sixth #SavingSessions - how would we have done?"}
-startDateTime <- "2023-01-19 09:00:00" # the half-hour it starts
-endDateTime <- "2023-01-19 09:30:00" # the half-hour it ends (makes data selection easier)
 
 res <- make_kwhComparisonPlot(elecCons_dt, startDateTime, endDateTime)
 res$p # the plot
-
-makeFlexTable(res$wt[, hms:= as.factor(hms)], 
-              cap = paste0("kWh comparisons (hms = half hour period start, number of comparison days = ", res$nCompDays,")"),
-              digits = 3) # the table
 ```
 
 > What do we conclude? 
 
+ * Randomly we would have saved a bit at 09:00!
+ 
+Total saving: `r sum(res$wt$kwh_diff)` kWh
+
+Total prize: £ `r round(sum(res$wt$kwh_diff) * gbp_rate,2)`
+
+```{r}
+makeFlexTable(res$wt[, hms:= as.factor(hms)], 
+              cap = paste0("kWh comparisons (hms = half hour period start, comparison = ", res$nCompDays," previous days"),
+              digits = 3) # the table
+```
+
+
 
 #### 23rd Jan 2023
 
-> 17:00 - 18:00 £3.37 per kilowatt hour
+```{r}
+startDateTime <- "2023-01-23 17:00:00" # the half-hour it starts
+endDateTime <- "2023-01-23 17:30:00" # the half-hour it ends (makes data selection easier)
+
+gbp_rate <- 3.37
+periodStr <- paste0(pdt(startDateTime), " - ", strftime(lubridate::as_datetime(endDateTime)+30*60, "%H:%M"))
+```
+
+> From `r periodStr`
+
+> Rate: £`r gbp_rate`/kWh
 
 Figure \@ref(fig:seventhSavingSessionsUsage) shows how we did in this #SavingSession compared to the last n similar days of the week.
 
 ```{r seventhSavingSessionsUsage, fig.cap="Seventh #SavingSessions - how did we do?"}
-startDateTime <- "2023-01-23 17:00:00" # the half-hour it starts
-endDateTime <- "2023-01-23 17:30:00" # the half-hour it ends (makes data selection easier)
-
-if(as.Date(startDateTime) < Sys.Date()){
-  res <- make_kwhComparisonPlot(elecCons_dt, startDateTime, endDateTime)
-  res$p # the plot
+if(as.Date(startDateTime) < Sys.Date()-1){ # data only available 24 hours later
+  data <- TRUE
+  res <- make_kwhComparisonPlot(elecCons_dt, 
+                                startDateTime, endDateTime)
   
+  print(res$p) # the plot
+  totalSavingKWh <- sum(res$wt$kwh_diff)
+  totalSavingGBP <- round(sum(res$wt$kwh_diff) * gbp_rate,2)
+} else {
+  theMsg <- "Data not yet available, try later :-("
+  message(theMsg)
+  totalSavingKWh <- theMsg
+  totalSavingGBp <- theMsg
+}
+```
+
+> What do we conclude? 
+
+ * Going for a [deer stalk](https://www.strava.com/activities/8440640672) worked a treat
+ * We can't do much about the baseline...
+ * As we've seen on previous sessions, our (cooking) 'peak' is usually c. 19:00 so these sessions are a bit early for us - they don't coincide with peak! Our 16:00 pick-up will be the heating/gas boiler pump.
+
+Total saving: `r totalSavingKWh` kWh
+
+Total prize: £ `r totalSavingGBP`
+
+```{r}
+if(data){ # set above
   makeFlexTable(res$wt[, hms:= as.factor(hms)], 
-                cap = paste0("kWh comparisons (hms = half hour period start, number of comparison days = ", res$nCompDays,")"),
+                cap = paste0("kWh comparisons (hms = half hour period start, comparison = ", res$nCompDays," previous days"),
                 digits = 3) # the table
 } else {
   message("Data not yet available, try later :-(")
 }
 ```
 
+
+#### 24th Jan 2023
+
+```{r}
+startDateTime <- "2023-01-24 16:30:00" # the half-hour it starts
+endDateTime <- "2023-01-24 17:30:00" # the half-hour it ends (makes data selection easier)
+
+gbp_rate <- 4
+
+periodStr <- paste0(pdt(startDateTime), " - ", strftime(lubridate::as_datetime(endDateTime)+30*60, "%H:%M"))
+```
+
+> From `r periodStr`
+
+> Rate: £`r gbp_rate`/kWh
+
+Figure \@ref(fig:eighthSavingSessionsUsage) shows how we did in this #SavingSession compared to the last n similar days of the week.
+
+```{r eighthSavingSessionsUsage, fig.cap="Eighth #SavingSessions - how did we do?"}
+if(as.Date(startDateTime) < Sys.Date()-1){ # data only available 24 hours later
+  data <- TRUE
+  res <- make_kwhComparisonPlot(elecCons_dt, 
+                                startDateTime, endDateTime)
+  
+  print(res$p) # the plot
+  totalSavingKWh <- sum(res$wt$kwh_diff)
+  totalSavingGBP <- round(sum(res$wt$kwh_diff) * gbp_rate,2)
+} else {
+  data <- FALSE
+  theMsg <- "Data not yet available, try later :-("
+  message(theMsg)
+  totalSavingKWh <- theMsg
+  totalSavingGBp <- theMsg
+}
+```
+
 > What do we conclude? 
+
+ * 
+ 
+Total saving: `r totalSavingKWh` kWh
+
+Total prize: £ `r totalSavingGBP`
+
+```{r}
+if(data){ # set above
+  makeFlexTable(res$wt[, hms:= as.factor(hms)], 
+                cap = paste0("kWh comparisons (hms = half hour period start, comparison = ", res$nCompDays," previous days"),
+                digits = 3) # the table
+} else {
+  message("Data not yet available, try later :-(")
+}
+```
+
 
 ## Gas 'Consumption' (aka `use`)
 
