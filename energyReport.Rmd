@@ -721,23 +721,19 @@ https://api.octopus.energy/v1/products/LOYAL-FIX-12M-21-10-07/electricity-tariff
 
 ### Winter 2022 SavingsSessions
 
-> Can we [flex](https://twitter.com/tom_rushby/status/1589653290609913856) any of the above for £3/kWh?
+> Can we [flex](https://twitter.com/tom_rushby/status/1589653290609913856) any of the above for ~ £3/kWh?
 
 Instigated by UK National gird, implemented (in our case) by Octopus- https://twitter.com/SavingSessions
 
 #### 15th Nov 2022
 
-```{r}
-startDateTime <- "2022-11-15 17:00:00" # the half-hour it starts
-endDateTime <- "2022-11-15 17:30:00" # the half-hour it ends (makes data selection easier)
-gbp_rate <- 2.50
+```{r setFunctions}
 pd <- function(t){ # make a pretty date
   strftime(t, "%a %d %b %Y")
 }
 pdt <- function(t){ # make a pretty date
   strftime(t, "%a %d %b %Y %H:%M")
 }
-periodStr <- paste0(pdt(startDateTime), " - ", strftime(lubridate::as_datetime(endDateTime)+30*60, "%H:%M"))
 
 # re-usable plot function
 make_kwhComparisonPlot <- function(dt, # half hourly smart meter data
@@ -746,22 +742,40 @@ make_kwhComparisonPlot <- function(dt, # half hourly smart meter data
                                    timeLag = 10){ # n days to compare against 
   res <- list() # results holder
   
-  sessionDate <- lubridate::date(endDateTime) # you'll see why
+    sessionDate <- lubridate::date(startDateTime) # you'll see why
+  if(lubridate::wday(startDateTime) < 6){
+    sessionDay <- "weekday" # you'll see why
+  } else {
+    sessionDay <- "weekend"
+  }
+  # 1 = Sunday, 7 = Saturday etc
+  dt[, ba_wday := lubridate::wday(dv_start, label = TRUE)]
+  dt[, ba_wd := ifelse(lubridate::wday(dv_start) > 1 & lubridate::wday(dv_start) < 7,
+                       "weekday",
+                       "weekend")]
+  # extract and aggregate baseline
+  # first get similar days (weekdays or weekends as needed)
   
-  baseline_meanHalfHourlyDT <- dt[dv_date != sessionDate & # not the session day
-                               #lubridate::wday(dv_date, label = TRUE) == sessionDay & # same day of the week
-                               dv_date > sessionDate - (timeLag + 1) & # n days before
-                               dv_date < sessionDate, # not after the session
+  similarDays <- dt[dv_date != sessionDate & ba_wd == sessionDay &
+                      dv_date < sessionDate]
+  uniqueN(similarDays$dv_date)
+  dates <- tail(similarDays[,(nObs = .N), keyby = .(dv_date)], timeLag) # get the most recent n = timeLag days
+  datesToGet <- dates[, dv_date]
+  daysWeWant <- similarDays[dv_date %in% datesToGet]
+  uniqueN(daysWeWant$dv_date)
+  
+  
+  baseline_meanHalfHourlyDT <- daysWeWant[, 
                                                 .(mean_kWh_elec = mean(consumption_kWh),
                                                   minDate = min(dv_date),
                                                   maxDate = max(dv_date)), 
                                                 keyby = .(hms = dv_hms)]
-  res$nCompDays <- timeLag
+  res$nCompDays <- uniqueN(daysWeWant$dv_date)
   
   baseline_meanHalfHourlyDT[, legend_lab := paste0("Comparison mean")]
   
   # extract session day
-  session_HalfHourlyDT <- elecCons_dt[dv_date == lubridate::date(startDateTime),  #  the session day
+  session_HalfHourlyDT <- dt[dv_date == lubridate::date(startDateTime),  #  the session day
                                       .(mean_kWh_elec = mean(consumption_kWh),
                                                   minDate = min(dv_date),
                                                   maxDate = max(dv_date)), 
@@ -808,20 +822,26 @@ make_kwhComparisonPlot <- function(dt, # half hourly smart meter data
       labs(x = "Time of day",
            y = "Mean kWh per half-hour",
            caption = paste0("Data: @OctopusEnergy\nPlot: @dataknut\nPoints centered in half-hours for clarity\nComparison = ", res$nCompDays," previous days (",
-                            pd(min(baseline_meanHalfHourlyDT$minDate)), " - ",
-                                pd(max(baseline_meanHalfHourlyDT$maxDate)), ")"
+                            pd(min(daysWeWant$dv_date)), " - ",
+                                pd(max(daysWeWant$dv_date)), ")"
                             )
       )
     
     return(res)
 }
+
+startDateTime <- "2022-11-15 17:00:00" # the half-hour it starts
+endDateTime <- "2022-11-15 17:30:00" # the half-hour it ends (makes data selection easier)
+gbp_rate <- 2.50
+
+periodStr <- paste0(pdt(startDateTime), " - ", strftime(lubridate::as_datetime(endDateTime)+30*60, "%H:%M"))
 ```
 
 > From `r periodStr`
 
 > Rate: £`r gbp_rate`/kWh
 
-Figure \@ref(fig:firstSavingSessionsUsage) shows how we did in the first #SavingSessions **compared to the last 10 days**.
+Figure \@ref(fig:firstSavingSessionsUsage) shows how we did in the first #SavingSessions **compared to the last 10 similar days**.
 
 > NB: this may not be quite the same as the Octopus algorithm
 
