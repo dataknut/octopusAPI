@@ -349,20 +349,36 @@ ggplot2::ggplot(plotDT, aes(x = dv_date, y = sum_kWh)) +
 Figure \@ref(fig:plotTotalElecImportDaily) shows the total daily kWh import with a smoothed curve for each day as shown.
 
 ```{r plotTotalElecImportDaily, fig.cap="Mean half-hourly electricity import per day (kWh, current year)"}
+elecCons_dt[, dv_month := lubridate::month(dv_date, label = TRUE)]
+elecCons_dt[, dv_year := lubridate::year(dv_date)]
+elecCons_dt[, dv_yday := lubridate::yday(dv_date)]
 plotDT <- elecCons_dt[, .(sum_kWh = sum(consumption_kWh),
                           mean_kWh = mean(consumption_kWh),
-                          nObs = .N), keyby = .(dv_date, dv_weekend)]
+                          nObs = .N), keyby = .(dv_yday, dv_month, dv_year)]
 
-ggplot2::ggplot(plotDT, aes(x = dv_date, y = sum_kWh, 
-                            colour = dv_weekend)) +
-  geom_point() +
+makeDailyPlotByYear <- function(dt){
+  # expects a plotDT with y = sum_kWh
+  p <- ggplot2::ggplot(plotDT, aes(x = dv_yday, y = sum_kWh, 
+                            colour = dv_month,
+                            linetype = as.factor(dv_year),
+                            alpha = dv_year)) +
+  geom_line() +
   geom_smooth() +
-  #facet_grid(dv_peakPeriod ~ .) +
-  scale_colour_viridis_d(name = "Weekend") +
-  labs(x = "Date",
+  #facet_grid(dv_year ~ .) +
+  theme(legend.position = "bottom") +
+  scale_colour_viridis_d(name = "Month") +
+  scale_linetype_discrete(name = "Year") +
+  scale_alpha_continuous(guide = "none") +
+  #scale_alpha_discrete(name = "Year") +
+  labs(x = "Day of the year",
        y = "Daily kWh")
-```
+  
+  return(p)
+}
 
+makeDailyPlotByYear(plotDT)
+
+```
 
 Figure \@ref(fig:plotElecImportDailyByPeriod) shows the mean daily kWh import with a smoothed curve for each period as defined below. The periods do not have the same number of half-hours so we use the mean as a comparator.
 
@@ -905,7 +921,7 @@ sumSavings <- totalSavingGBP + sumSavings
  * Total saving: `r totalSavingKWh` kWh
  * Total prize: £ `r totalSavingGBP`
  * Cost centre #3 rushed home to get a toastie & his laundry in on the 30@30 cycle before 17:00 and then went to rugby training
- * Cost centre #4 just went to the gym
+ * Cost centre #4 went to the gym & stayed there until 20:00
  * Our dinner guest was happy to delay cooking & eating slightly
  
 ```{r}
@@ -1223,16 +1239,15 @@ Figure \@ref(fig:plotGasImportDaily) shows the mean daily kWh import with a smoo
 > To do: mark weekends etc
 
 ```{r plotGasImportDaily, fig.cap="Daily gas consumption (current year)"}
+gasCons_dt[, dv_month := lubridate::month(dv_date, label = TRUE)]
+gasCons_dt[, dv_year := lubridate::year(dv_date)]
+gasCons_dt[, dv_yday := lubridate::yday(dv_date)]
 plotDT <- gasCons_dt[, .(sum_kWh = sum(consumption_kWh),
                          mean_kWh = mean(consumption_kWh),
-                         nObs = .N), keyby = .(dv_date)]
+                         nObs = .N), keyby = .(dv_yday, dv_month, dv_year)]
 
-ggplot2::ggplot(plotDT, aes(x = dv_date, y = sum_kWh)) +
-  geom_point() +
-  geom_smooth() +
-  theme(legend.position = "bottom") +
-  labs(x = "Date",
-       y = "Sum kWh per day")
+
+makeDailyPlotByYear(plotDT)
 ```
 
 ```{r plotGasImportDailyWeekdays, fig.cap="Daily gas consumption (by weekday, current year)"}
