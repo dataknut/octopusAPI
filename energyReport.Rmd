@@ -887,9 +887,60 @@ makeFlexTable(res$wt[, hms:= as.factor(hms)],
 > For a complicated set of pre-Xmas prep reasons (and poor institutional memory) our electricity usage in the late afternoon was much *higher* than usual on the session day. As a result our actions only brought usage down to 'average' for this time on a Tuesday (so we won't win any points). But as a result our usage was probably **way lower** than it otherwise would have been judging by the spikes before and after. So if it really had been a critical peak event, we would have been helping the system but not being rewarded...
 
 
-#### 22nd Nov 2022
+#### 22nd Nov 2022 - missed it :-(
 
-skipped this one
+
+```{r}
+startDateTime <- "2022-11-22 17:30:00" # the half-hour it starts
+endDateTime <- "2022-11-22 18:00:00" # the half-hour it ends (makes data selection easier)
+
+gbp_rate <- 2.25
+
+periodStr <- paste0(pdt(startDateTime), " - ", strftime(lubridate::as_datetime(endDateTime)+30*60, "%H:%M"))
+```
+
+> From `r periodStr`
+
+> Rate: £`r gbp_rate`/kWh
+
+We missed this one but Figure \@ref(fig:secondSavingSessionsUsage) shows how we would have done in this #SavingSession compared to the last n similar days of the week - had we signed up.
+
+```{r secondSavingSessionsUsage, fig.cap="Second #SavingSessions - how would we have done?"}
+if(as.Date(startDateTime) < Sys.Date()){ # octopus data only available for day before
+  data <- TRUE
+  res <- make_kwhComparisonPlot(elecCons_dt, 
+                                startDateTime, endDateTime)
+  
+  print(res$p) # the plot
+  totalSavingKWh <- sum(res$wt$kwh_diff)
+  totalSavingGBP <- round(sum(res$wt$kwh_diff) * gbp_rate,2)
+} else {
+  data <- FALSE
+  theMsg <- "Data not yet available, try later :-("
+  message(theMsg)
+  totalSavingKWh <- theMsg
+  totalSavingGBp <- theMsg
+}
+```
+
+> What do we conclude? 
+
+ * we would have done quite well after 18:00 :-)
+ 
+Total saving: `r totalSavingKWh` kWh
+
+Total prize: £ `r totalSavingGBP`
+
+```{r}
+if(data){ # set above
+  makeFlexTable(res$wt[, hms:= as.factor(hms)], 
+                cap = paste0("kWh comparisons (hms = half hour period start, comparison = ", res$nCompDays," previous days"),
+                digits = 3) # the table
+} else {
+  message("Data not yet available, try later :-(")
+}
+```
+
 
 #### 30th Nov 2022
 
@@ -1011,7 +1062,7 @@ makeFlexTable(res$wt[, hms:= as.factor(hms)],
 
 
 
-#### 19th Jan 2023
+#### 19th Jan 2023 - missed it :-(
 
 ```{r}
 startDateTime <- "2023-01-19 09:00:00" # the half-hour it starts
@@ -1159,6 +1210,58 @@ if(data){ # set above
 }
 ```
 
+#### 30th Jan 2023 - missed it :-(
+
+```{r}
+startDateTime <- "2023-01-30 09:00:00" # the half-hour it starts
+endDateTime <- "2023-01-30 09:30:00" # the half-hour it ends (makes data selection easier)
+
+gbp_rate <- 2.25
+
+periodStr <- paste0(pdt(startDateTime), " - ", strftime(lubridate::as_datetime(endDateTime)+30*60, "%H:%M"))
+```
+
+> From `r periodStr`
+
+> Rate: £`r gbp_rate`/kWh
+
+We missed this one but Figure \@ref(fig:ninthSavingSessionsUsage) shows how we did in this #SavingSession compared to the last n similar days of the week - had we signed up.
+
+```{r ninthSavingSessionsUsage, fig.cap="Ninth #SavingSessions - how would we have done?"}
+if(as.Date(startDateTime) < Sys.Date()){ # octopus data only available for day before
+  data <- TRUE
+  res <- make_kwhComparisonPlot(elecCons_dt, 
+                                startDateTime, endDateTime)
+  
+  print(res$p) # the plot
+  totalSavingKWh <- sum(res$wt$kwh_diff)
+  totalSavingGBP <- round(sum(res$wt$kwh_diff) * gbp_rate,2)
+} else {
+  data <- FALSE
+  theMsg <- "Data not yet available, try later :-("
+  message(theMsg)
+  totalSavingKWh <- theMsg
+  totalSavingGBp <- theMsg
+}
+```
+
+> What do we conclude? 
+
+ * some put the kettle on at 09:30 :-)
+ 
+Total saving: `r totalSavingKWh` kWh
+
+Total prize: £ `r totalSavingGBP`
+
+```{r}
+if(data){ # set above
+  makeFlexTable(res$wt[, hms:= as.factor(hms)], 
+                cap = paste0("kWh comparisons (hms = half hour period start, comparison = ", res$nCompDays," previous days"),
+                digits = 3) # the table
+} else {
+  message("Data not yet available, try later :-(")
+}
+```
 
 ## Gas 'Consumption' (aka `use`)
 
