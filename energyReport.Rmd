@@ -921,7 +921,7 @@ if(as.Date(startDateTime) < Sys.Date()){ # octopus data only available for day b
   theMsg <- "Data not yet available, try later :-("
   message(theMsg)
   totalSavingKWh <- theMsg
-  totalSavingGBp <- theMsg
+  totalSavingGBP <- theMsg
 }
 ```
 
@@ -1132,7 +1132,7 @@ if(as.Date(startDateTime) < Sys.Date()-1){ # data only available 24 hours later
   theMsg <- "Data not yet available, try later :-("
   message(theMsg)
   totalSavingKWh <- theMsg
-  totalSavingGBp <- theMsg
+  totalSavingGBP <- theMsg
 }
 ```
 
@@ -1188,7 +1188,7 @@ if(as.Date(startDateTime) < Sys.Date()){ # octopus data only available for day b
   theMsg <- "Data not yet available, try later :-("
   message(theMsg)
   totalSavingKWh <- theMsg
-  totalSavingGBp <- theMsg
+  totalSavingGBP <- theMsg
 }
 ```
 
@@ -1243,13 +1243,67 @@ if(as.Date(startDateTime) < Sys.Date()){ # octopus data only available for day b
   theMsg <- "Data not yet available, try later :-("
   message(theMsg)
   totalSavingKWh <- theMsg
-  totalSavingGBp <- theMsg
+  totalSavingGBP <- theMsg
 }
 ```
 
 > What do we conclude? 
 
- * some put the kettle on at 09:30 :-)
+ * someone put the kettle on at 09:30 :-)
+ 
+Total saving: `r totalSavingKWh` kWh
+
+Total prize: £ `r totalSavingGBP`
+
+```{r}
+if(data){ # set above
+  makeFlexTable(res$wt[, hms:= as.factor(hms)], 
+                cap = paste0("kWh comparisons (hms = half hour period start, comparison = ", res$nCompDays," previous days"),
+                digits = 3) # the table
+} else {
+  message("Data not yet available, try later :-(")
+}
+```
+
+
+#### 13th Feb 2023
+
+```{r}
+startDateTime <- "2023-02-13 17:30:00" # the half-hour it starts
+endDateTime <- "2023-02-13 18:00:00" # the half-hour it ends (makes data selection easier)
+
+gbp_rate <- 2.25
+
+periodStr <- paste0(pdt(startDateTime), " - ", strftime(lubridate::as_datetime(endDateTime)+30*60, "%H:%M"))
+```
+
+> From `r periodStr`
+
+> Rate: £`r gbp_rate`/kWh
+
+We missed this one but Figure \@ref(fig:tenthSavingSessionsUsage) shows how we did in this #SavingSession compared to the last n similar days of the week - had we signed up.
+
+```{r tenthSavingSessionsUsage, fig.cap="Tenth #SavingSessions- how did we do?"}
+if(as.Date(startDateTime) < Sys.Date()){ # octopus data only available for day before
+  data <- TRUE
+  res <- make_kwhComparisonPlot(elecCons_dt, 
+                                startDateTime, endDateTime)
+  
+  print(res$p) # the plot
+  totalSavingKWh <- sum(res$wt$kwh_diff)
+  totalSavingGBP <- round(sum(res$wt$kwh_diff) * gbp_rate,2)
+} else {
+  data <- FALSE
+  theMsg <- "Data not yet available, try later :-("
+  message(theMsg)
+  totalSavingKWh <- theMsg
+  totalSavingGBP <- theMsg
+}
+```
+
+> What do we conclude? 
+
+ * ?
  
 Total saving: `r totalSavingKWh` kWh
 
