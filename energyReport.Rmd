@@ -737,7 +737,7 @@ URL will be something like
 
 https://api.octopus.energy/v1/products/LOYAL-FIX-12M-21-10-07/electricity-tariffs/E-1R-LOYAL-FIX-12M-21-10-07-A/standard-unit-rates/
 
-### Winter 2022 SavingsSessions
+### Winter 2022/2023 SavingsSessions
 
 > Can we [flex](https://twitter.com/tom_rushby/status/1589653290609913856) any of the above for ~ £3/kWh?
 
@@ -1281,7 +1281,7 @@ periodStr <- paste0(pdt(startDateTime), " - ", strftime(lubridate::as_datetime(e
 
 > Rate: £`r gbp_rate`/kWh
 
-We missed this one but Figure \@ref(fig:tenthSavingSessionsUsage) shows how we did in this #SavingSession compared to the last n similar days of the week - had we signed up.
+Figure \@ref(fig:tenthSavingSessionsUsage) shows how we did in this #SavingSession compared to the last n similar days of the week.
 
 ```{r tenthSavingSessionsUsage, fig.cap="Tenth #SavingSessions- how did we do?"}
 if(as.Date(startDateTime) < Sys.Date()){ # octopus data only available for day before
@@ -1303,7 +1303,9 @@ if(as.Date(startDateTime) < Sys.Date()){ # octopus data only available for day b
 
 > What do we conclude? 
 
- * ?
+ * Solar's back :-)
+ * We managed to push cooking back to 18:30
+ * Three distinct cooking periods! :-(
  
 Total saving: `r totalSavingKWh` kWh
 
