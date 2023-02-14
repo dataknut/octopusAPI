@@ -1356,12 +1356,12 @@ summary(gasCons_dt$dv_start)
 
 maxTime <- max(gasCons_dt$dv_start)
 
-hoursAgo <- now() - maxTime
+hoursAgo <- lubridate::now() - maxTime
 ```
 
-Note that this data starts later as we finally got the original un-registered smart meter replaced in February.
+Note that this data starts later as we finally got the original un-registered smart meter replaced in February 2022.
 
-The data used here is up to `r maxTime`, which is `r round(hoursAgo,1)` hours ago. In general the Octopus API seems to have data up to `midnight last night`.
+The data used here is up to `r maxTime`. In general the Octopus API seems to have data up to `midnight last night`.
 
 ### Half-hourly anlaysis
 
