@@ -305,11 +305,13 @@ ggplot2::ggplot(elecCons_dt, aes(x = dv_date, y = dv_hms, fill = consumption_kWh
        y = "Half-hour")
 ```
 
-Repeat but with just the last 7 days of data - useful for checking recent appliance use and offspring effects. We do quite a lot of batch cooking on Sunday nights...
+Repeat but with just the last 14 days of data - useful for checking recent appliance use and offspring effects. We do quite a lot of batch cooking on Sunday nights...
+
+> Check this really is the last 14 days - there may be data errors
 
 ```{r plotElecImportHalfHourlyRecent, fig.cap="Half hourly electricity import (current year, last 14 days)"}
 today <- lubridate::today()
-plotDT <- elecCons_dt[dv_date >= today - 14]
+plotDT <- elecCons_dt[dv_date >= max(dv_date) - 14]
 p <- ggplot2::ggplot(plotDT, aes(x = dv_date, y = dv_hms, fill = consumption_kWh)) +
   geom_tile() +
   theme(legend.position = "bottom") +
@@ -1376,11 +1378,13 @@ ggplot2::ggplot(gasCons_dt, aes(x = dv_date, y = dv_hms, fill = consumption_kWh)
        y = "Half-hour")
 ```
 
-Repeat but with just the last 7 days of data - useful for checking recent appliance use and offspring effects.
+Repeat but with just the last 14 days of data - useful for checking recent appliance use and offspring effects.
+
+> Check this really is the last 2 weeks of gas use - there may be gas data errors
 
 ```{r plotGasImportHalfHourlyRecent, fig.cap="Half hourly gas import (current year, last 14 days)"}
 today <- lubridate::today()
-plotDT <- gasCons_dt[dv_date >= today - 14]
+plotDT <- gasCons_dt[dv_date >= max(dv_date) - 14] # last 14 days of data - might not be last 14 days in reality due to data errors
 p <- ggplot2::ggplot(plotDT, aes(x = dv_date, y = dv_hms, fill = consumption_kWh)) +
   geom_tile() +
   theme(legend.position = "bottom") +
