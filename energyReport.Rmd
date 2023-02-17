@@ -228,7 +228,7 @@ makeFlexTable(head(props[, .(town, county,
 
 ```
 
-List the electricity meters by MPAN. There should be only one...
+List the electricity meters by MPAN. There should be two - import & export...
 
 ```{r listElec}
 # this is a list of n mpans
