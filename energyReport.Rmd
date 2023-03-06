@@ -64,22 +64,26 @@ makeDerivedVars <- function(dt){
   dt[, dv_hms := hms::as_hms(dv_start)]
   dt[, dv_date := lubridate::as_date(dv_start)]
   
-  dt[, dv_peakPeriod := ifelse(dv_hms < as_hms("07:00:00"), "Early morning", NA)]
-  dt[, dv_peakPeriod := ifelse(dv_hms >= as_hms("07:00:00") & dv_hms < as_hms("09:00:00"), 
-                               "Morning peak", 
+  dt[, dv_peakPeriod := ifelse(dv_hms < as_hms("06:00:00"), "Early morning (00:00 - 06:00)", NA)]
+  dt[, dv_peakPeriod := ifelse(dv_hms >= as_hms("06:00:00") & dv_hms < as_hms("08:30:00"), 
+                               "Morning peak (06:00 - 08:30)", 
                                dv_peakPeriod)]
-  dt[, dv_peakPeriod := ifelse(dv_hms >= as_hms("09:00:00") & dv_hms < as_hms("16:00:00"), 
-                               "Day time", 
+  dt[, dv_peakPeriod := ifelse(dv_hms >= as_hms("08:30:00") & dv_hms < as_hms("16:30:00"), 
+                               "Day time (08:30 - 16:30", 
                                dv_peakPeriod)]
-  dt[, dv_peakPeriod := ifelse(dv_hms >= as_hms("16:00:00") & dv_hms < as_hms("20:00:00"), 
-                               "Evening peak", 
+  dt[, dv_peakPeriod := ifelse(dv_hms >= as_hms("16:30:00") & dv_hms < as_hms("21:30:00"), 
+                               "Evening peak (16:30 - 21:30)", 
                                dv_peakPeriod)]
-  dt[, dv_peakPeriod := ifelse(dv_hms >= as_hms("20:00:00"), 
-                               "Late evening", 
+  dt[, dv_peakPeriod := ifelse(dv_hms >= as_hms("21:30:00"), 
+                               "Late evening (21:30 - 00:00)", 
                                dv_peakPeriod)]
   
-  levels <- c("Early morning", "Morning peak", "Day time", 
-              "Evening peak", "Late evening") # set order nicely for plots & tables
+  # MUST match labels above
+  levels <- c("Early morning (00:00 - 06:00)", 
+              "Morning peak (06:00 - 08:30)", 
+              "Day time (08:30 - 16:30", 
+              "Evening peak (16:30 - 21:30)", 
+              "Late evening (21:30 - 00:00)") # set order nicely for plots & tables
   # check
   # dt[, dv_hour := lubridate::hour(dv_start)]
   #table(dt$dv_hour, dt$dv_peakPeriod)
@@ -332,6 +336,18 @@ makeFlexTable(t, digits = 2,
               cap = "Recent electricity use")
 
 daily_totals[, fuel := "elec"]  # for future use
+
+
+p <- ggplot2::ggplot(recent_dt, aes(x = dv_date, 
+                                    y = sum_kWh_elec, fill = dv_peakPeriod)) +
+  geom_col(position = "stack") +
+  scale_fill_viridis_d(name = "Time of day") +
+  scale_x_date(date_breaks = "1 day", date_labels =  "%a %b %d") +
+  theme(axis.text.x = element_text(angle = 90)) +
+labs(x = "Date",
+     y = "Electricity kWh")
+
+plotly::ggplotly(p)
 ```
 
 
@@ -352,7 +368,7 @@ ggplot2::ggplot(plotDT, aes(x = dv_date, y = sum_kWh)) +
 
 Figure \@ref(fig:plotTotalElecImportDaily) shows the total daily kWh import with a smoothed curve for each day as shown.
 
-```{r plotTotalElecImportDaily, fig.cap="Mean half-hourly electricity import per day (kWh, current year)"}
+```{r plotTotalElecImportDaily, fig.cap="Mean half-hourly electricity import per day (kWh, current year)", warning=FALSE}
 elecCons_dt[, dv_month := lubridate::month(dv_date, label = TRUE)]
 elecCons_dt[, dv_year := lubridate::year(dv_date)]
 elecCons_dt[, dv_yday := lubridate::yday(dv_date)]
@@ -1395,15 +1411,29 @@ p <- ggplot2::ggplot(plotDT, aes(x = dv_date, y = dv_hms, fill = consumption_kWh
 plotly::ggplotly(p)
 
 plotDT[, dow := lubridate::wday(dv_date, label = TRUE)]
-recent_dt <- plotDT[, .(sum_kWh_elec = sum(consumption_kWh)), keyby = .(dv_date, dow, dv_peakPeriod)]
-daily_totals <- plotDT[, .(Total = sum(consumption_kWh)), keyby = .(dv_date, dow)]
 
-t <- dcast(recent_dt, dv_date + dow ~ dv_peakPeriod, val.var = sum_kWh_elec)
+recent_dt <- plotDT[, .(sum_kWh_gas = sum(consumption_kWh)), keyby = .(dv_date, dow, dv_peakPeriod)]
+daily_totals <- plotDT[, .(sum_kWh_gas = sum(consumption_kWh)), keyby = .(dv_date, dow)]
+
+t <- dcast(recent_dt, dv_date + dow ~ dv_peakPeriod, val.var = sum_kWh_gas)
 # add totals
 t <- t[daily_totals]
 makeFlexTable(t, digits = 2,
               cap = "Recent gas use")
+
+p <- ggplot2::ggplot(recent_dt, aes(x = dv_date, 
+                                    y = sum_kWh_gas, fill = dv_peakPeriod)) +
+  geom_col(position = "stack") +
+  scale_fill_viridis_d(name = "Time of day") +
+  scale_x_date(date_breaks = "1 day", date_labels =  "%a %b %d") +
+  theme(axis.text.x = element_text(angle = 90)) +
+labs(x = "Date",
+     y = "Gas kWh")
+
+plotly::ggplotly(p)
 ```
+
+Compare with temperatures from https://www.accuweather.com/en/gb/framlingham/ip13-9/weather-forecast/330898
 
 ### Daily analysis
 
