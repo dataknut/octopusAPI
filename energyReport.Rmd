@@ -320,6 +320,8 @@ p <- ggplot2::ggplot(plotDT, aes(x = dv_date, y = dv_hms, fill = consumption_kWh
   geom_tile() +
   theme(legend.position = "bottom") +
   scale_fill_viridis_c(name = "Electricity import (kWh)") +
+  scale_x_date(date_breaks = "1 day", date_labels =  "%a %b %d") +
+  theme(axis.text.x = element_text(angle = 90)) +
   labs(x = "Date",
        y = "Half-hour")
 
@@ -1405,6 +1407,8 @@ p <- ggplot2::ggplot(plotDT, aes(x = dv_date, y = dv_hms, fill = consumption_kWh
   geom_tile() +
   theme(legend.position = "bottom") +
   scale_fill_viridis_c(name = "Gas import (kWh)") +
+  scale_x_date(date_breaks = "1 day", date_labels =  "%a %b %d") +
+  theme(axis.text.x = element_text(angle = 90)) +
   labs(x = "Date",
        y = "Half-hour")
 
