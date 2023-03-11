@@ -1341,6 +1341,60 @@ if(data){ # set above
 }
 ```
 
+
+#### 21st Feb 2023 - missed :-(
+
+```{r}
+startDateTime <- "2023-02-21 17:30:00" # the half-hour it starts
+endDateTime <- "2023-02-21 18:00:00" # the half-hour it ends (makes data selection easier)
+
+gbp_rate <- 2.25
+
+periodStr <- paste0(pdt(startDateTime), " - ", strftime(lubridate::as_datetime(endDateTime)+30*60, "%H:%M"))
+```
+
+> From `r periodStr`
+
+> Rate: £`r gbp_rate`/kWh
+
+Figure \@ref(fig:tenthSavingSessionsUsage) shows how we would have done in this #SavingSession compared to the last n similar days of the week.
+
+```{r eleventhSavingSessionsUsage, fig.cap="Eleventh #SavingSessions- how would we have done?"}
+if(as.Date(startDateTime) < Sys.Date()){ # octopus data only available for day before
+  data <- TRUE
+  res <- make_kwhComparisonPlot(elecCons_dt, 
+                                startDateTime, endDateTime)
+  
+  print(res$p) # the plot
+  totalSavingKWh <- sum(res$wt$kwh_diff)
+  totalSavingGBP <- round(sum(res$wt$kwh_diff) * gbp_rate,2)
+} else {
+  data <- FALSE
+  theMsg <- "Data not yet available, try later :-("
+  message(theMsg)
+  totalSavingKWh <- theMsg
+  totalSavingGBP <- theMsg
+}
+```
+
+> What do we conclude? 
+
+ * we needed to sign up!
+ 
+Total saving: `r totalSavingKWh` kWh
+
+Total prize: £ `r totalSavingGBP`
+
+```{r}
+if(data){ # set above
+  makeFlexTable(res$wt[, hms:= as.factor(hms)], 
+                cap = paste0("kWh comparisons (hms = half hour period start, comparison = ", res$nCompDays," previous days"),
+                digits = 3) # the table
+} else {
+  message("Data not yet available, try later :-(")
+}
+```
+
 ## Gas 'Consumption' (aka `use`)
 
 We need to convert the gas consumption from m3 to kWh - see https://developer.octopus.energy/docs/api/#list-consumption-for-a-meter
