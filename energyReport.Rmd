@@ -380,16 +380,17 @@ plotDT <- elecCons_dt[, .(sum_kWh = sum(consumption_kWh),
 
 makeDailyPlotByYear <- function(dt){
   # expects a plotDT with y = sum_kWh
-  p <- ggplot2::ggplot(plotDT, aes(x = dv_yday, y = sum_kWh, 
-                            colour = dv_month,
-                            linetype = as.factor(dv_year),
+  p <- ggplot2::ggplot(plotDT, aes(x = dv_yday, y = sum_kWh)) +
+    geom_smooth(aes(linetype = as.factor(dv_year))) +
+    geom_point(aes(shape = as.factor(dv_year), 
+                   colour = dv_month,
                             alpha = dv_year)) +
-  geom_line() +
-  geom_smooth() +
   #facet_grid(dv_year ~ .) +
   theme(legend.position = "bottom") +
   scale_colour_viridis_d(name = "Month") +
   scale_linetype_discrete(name = "Year") +
+  scale_alpha_continuous(name = "Year") +
+  scale_shape_discrete(name = "Year") +
   scale_alpha_continuous(guide = "none") +
   #scale_alpha_discrete(name = "Year") +
   labs(x = "Day of the year",
@@ -1357,7 +1358,7 @@ periodStr <- paste0(pdt(startDateTime), " - ", strftime(lubridate::as_datetime(e
 
 > Rate: £`r gbp_rate`/kWh
 
-Figure \@ref(fig:tenthSavingSessionsUsage) shows how we would have done in this #SavingSession compared to the last n similar days of the week.
+Figure \@ref(fig:eleventhSavingSessionsUsage) shows how we would have done in this #SavingSession compared to the last n similar days of the week.
 
 ```{r eleventhSavingSessionsUsage, fig.cap="Eleventh #SavingSessions- how would we have done?"}
 if(as.Date(startDateTime) < Sys.Date()){ # octopus data only available for day before
@@ -1380,6 +1381,64 @@ if(as.Date(startDateTime) < Sys.Date()){ # octopus data only available for day b
 > What do we conclude? 
 
  * we needed to sign up!
+ 
+Total saving: `r totalSavingKWh` kWh
+
+Total prize: £ `r totalSavingGBP`
+
+```{r}
+if(data){ # set above
+  makeFlexTable(res$wt[, hms:= as.factor(hms)], 
+                cap = paste0("kWh comparisons (hms = half hour period start, comparison = ", res$nCompDays," previous days"),
+                digits = 3) # the table
+} else {
+  message("Data not yet available, try later :-(")
+}
+```
+
+
+#### 15th March 2023
+
+Would have been better yesterday - power cut 14:00 - 21:00!
+
+```{r}
+startDateTime <- "2023-03-15 18:30:00" # the half-hour it starts
+endDateTime <- "2023-03-15 19:00:00" # the half-hour it ends (makes data selection easier)
+
+gbp_rate <- 2.25
+
+periodStr <- paste0(pdt(startDateTime), " - ", strftime(lubridate::as_datetime(endDateTime)+30*60, "%H:%M"))
+```
+
+> From `r periodStr`
+
+> Rate: £`r gbp_rate`/kWh
+
+Figure \@ref(fig:twelthSavingSessionsUsage) shows how we would have done in this #SavingSession compared to the last n similar days of the week.
+
+```{r twelthSavingSessionsUsage, fig.cap="Twelth #SavingSessions- how did we do?"}
+if(as.Date(startDateTime) < Sys.Date()){ # octopus data only available for day before
+  data <- TRUE
+  res <- make_kwhComparisonPlot(elecCons_dt, 
+                                startDateTime, endDateTime)
+  
+  print(res$p) # the plot
+  totalSavingKWh <- sum(res$wt$kwh_diff)
+  totalSavingGBP <- round(sum(res$wt$kwh_diff) * gbp_rate,2)
+} else {
+  data <- FALSE
+  theMsg <- "Data not yet available, try later :-("
+  message(theMsg)
+  totalSavingKWh <- theMsg
+  totalSavingGBP <- theMsg
+}
+```
+
+> What do we conclude? 
+
+ * not too bad - what happened at 15:30??
+ * sending #costCentre4 to the climbing gym from 16:00 to 21:00 seemed to work
+ * don't have a power cut the day before... it affects your baseline
  
 Total saving: `r totalSavingKWh` kWh
 
