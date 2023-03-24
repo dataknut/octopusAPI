@@ -1414,7 +1414,7 @@ periodStr <- paste0(pdt(startDateTime), " - ", strftime(lubridate::as_datetime(e
 
 > Rate: £`r gbp_rate`/kWh
 
-Figure \@ref(fig:twelthSavingSessionsUsage) shows how we would have done in this #SavingSession compared to the last n similar days of the week.
+Figure \@ref(fig:twelthSavingSessionsUsage) shows how did in this #SavingSession compared to the last n similar days of the week.
 
 ```{r twelthSavingSessionsUsage, fig.cap="Twelth #SavingSessions- how did we do?"}
 if(as.Date(startDateTime) < Sys.Date()){ # octopus data only available for day before
@@ -1439,6 +1439,62 @@ if(as.Date(startDateTime) < Sys.Date()){ # octopus data only available for day b
  * not too bad - what happened at 15:30??
  * sending #costCentre4 to the climbing gym from 16:00 to 21:00 seemed to work
  * don't have a power cut the day before... it affects your baseline
+ 
+Total saving: `r totalSavingKWh` kWh
+
+Total prize: £ `r totalSavingGBP`
+
+```{r}
+if(data){ # set above
+  makeFlexTable(res$wt[, hms:= as.factor(hms)], 
+                cap = paste0("kWh comparisons (hms = half hour period start, comparison = ", res$nCompDays," previous days"),
+                digits = 3) # the table
+} else {
+  message("Data not yet available, try later :-(")
+}
+```
+
+
+#### 23rd March 2023
+
+```{r}
+startDateTime <- "2023-03-23 18:30:00" # the half-hour it starts
+endDateTime <- "2023-03-23 19:00:00" # the half-hour it ends (makes data selection easier)
+
+gbp_rate <- 3.00
+
+periodStr <- paste0(pdt(startDateTime), " - ", strftime(lubridate::as_datetime(endDateTime)+30*60, "%H:%M"))
+```
+
+> From `r periodStr`
+
+> Rate: £`r gbp_rate`/kWh
+
+Figure \@ref(fig:thirteenthSavingSessionsUsage) shows how did in this #SavingSession compared to the last n similar days of the week.
+
+```{r thirteenthSavingSessionsUsage, fig.cap="Thirteenth #SavingSessions- how did we do?"}
+if(as.Date(startDateTime) < Sys.Date()){ # octopus data only available for day before
+  data <- TRUE
+  res <- make_kwhComparisonPlot(elecCons_dt, 
+                                startDateTime, endDateTime)
+  
+  print(res$p) # the plot
+  totalSavingKWh <- sum(res$wt$kwh_diff)
+  totalSavingGBP <- round(sum(res$wt$kwh_diff) * gbp_rate,2)
+} else {
+  data <- FALSE
+  theMsg <- "Data not yet available, try later :-("
+  message(theMsg)
+  totalSavingKWh <- theMsg
+  totalSavingGBP <- theMsg
+}
+```
+
+> What do we conclude? 
+
+ * not too bad
+ * sending #costCentre4 & Mrs A to the gym/swimming helped
+ * we usually cook later so 18:30 - 19:30 is not generally our 'peak'...
  
 Total saving: `r totalSavingKWh` kWh
 
