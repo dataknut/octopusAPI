@@ -1559,7 +1559,12 @@ The data used here is up to `r maxTime`. In general the Octopus API seems to hav
 
 ### Half-hourly anlaysis
 
-Figure \@ref(fig:plotGasImport) shows half-hourly gas import ('consumption') for the current year. The power cuts are even easier to see here. Interestingly the pattern after the gas boiler was serviced in June is more varied. _What did he change_?
+Figure \@ref(fig:plotGasImport) shows half-hourly gas import ('consumption') for the current year. The power cuts are even easier to see here. 
+
+Gas boiler services:
+
+ * June 2022 - interestingly the pattern after the gas boiler was serviced in June 2022 is more varied. _What did he change_?
+ * 15th June 2023
 
 ```{r plotGasImport, fig.cap="Half-hourly gas consumption (current year)"}
 ggplot2::ggplot(gasCons_dt, aes(x = dv_date, y = dv_hms, fill = consumption_kWh)) +
