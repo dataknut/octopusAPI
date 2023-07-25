@@ -658,14 +658,14 @@ daily_elec <- elecCons_dt[, .(sum_kWh = sum(consumption_kWh,
 # must be an easier way
 
 daily_elec[, kwh_p := ifelse(dv_date < lubridate::as_date("2022-11-21"),
-                             pricesDT[fuel == "elec" & component == "kWh" &
+                             pricesDT[fuel == "elec_imp" & component == "kWh" &
                                         dateEnd == lubridate::as_datetime("2022-11-21"), price],
-                             pricesDT[fuel == "elec" & component == "kWh" &
+                             pricesDT[fuel == "elec_imp" & component == "kWh" &
                                         dateStart == lubridate::as_datetime("2022-11-22"), price])]
 daily_elec[, sc_p := ifelse(dv_date < lubridate::as_date("2022-11-21"),
-                            pricesDT[fuel == "elec" & component == "sc" &
+                            pricesDT[fuel == "elec_imp" & component == "sc" &
                                        dateEnd == lubridate::as_datetime("2022-11-21"), price],
-                            pricesDT[fuel == "elec" & component == "sc" &
+                            pricesDT[fuel == "elec_imp" & component == "sc" &
                                        dateStart == lubridate::as_datetime("2022-11-22"), price])]
 
 daily_elec[, cost := ((sum_kWh * kwh_p) + sc_p)]
@@ -721,9 +721,9 @@ message("# Prices to 21st Nov 2022")
 #   return(p)
 # }
 
-kWh_p <- pricesDT[fuel == "elec" & component == "kWh" &
+kWh_p <- pricesDT[fuel == "elec_imp" & component == "kWh" &
                     dateEnd == lubridate::as_datetime("2022-11-21"), price]
-sc_p <- pricesDT[fuel == "elec" & component == "sc" &
+sc_p <- pricesDT[fuel == "elec_imp" & component == "sc" &
                    dateEnd == lubridate::as_datetime("2022-11-21"), price]
 
 message("Projected annual elec cost @ £ ", kWh_p,
@@ -738,9 +738,9 @@ projAannualCost/12
 
 message("########")
 message("# From to 22nd Nov 2022 - price cap")
-kWh_p <- pricesDT[fuel == "elec" & component == "kWh" &
+kWh_p <- pricesDT[fuel == "elec_imp" & component == "kWh" &
                     dateStart == lubridate::as_datetime("2022-11-22"), price]
-sc_p <- pricesDT[fuel == "elec" & component == "sc" &
+sc_p <- pricesDT[fuel == "elec_imp" & component == "sc" &
                    dateStart == lubridate::as_datetime("2022-11-22"), price]
 
 message("Projected annual elec cost @ £ ", kWh_p,
@@ -756,6 +756,8 @@ monthlyCost_capped
 message("That's an increase of ", round(100*((annualCost_elecCapped-projAannualCost)/projAannualCost),2),  " % points")
 
 ```
+
+> NB - these willbe out of date from July 2023 as prices are changing
 
 > TO DO: fix £ analysis to use tariff from API
 
