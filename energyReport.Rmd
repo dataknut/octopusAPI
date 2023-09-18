@@ -454,9 +454,11 @@ What's happening here?
 * we got rid of a freezer with a bad seal in July (-> `early morning baseload`) and also swapped a built-in fridge-freezer for a stand-alone fridge (& freezer)
 * we set the hot water circulation loop to 'just in time' (`morning peak`). Well, kind of. Might affect the gas more.
 
-### PV generation
+### PV generation (needs fixing to use PV export data)
 
-Not Octopus data - irregular reads by us. Load from .xslsx
+Not Octopus data - irregular reads by us. Load from .xslsx.
+
+> To do: update to use octopus Agile Outgoing data
 
 Figure \@ref(fig:getPVgen) compares our PV generation with overall grid import. These are mean values. We are occasionally exporting (Table \@ref(tab:elecTotal) has zeros) but we do not (currently) have access to the export data.
 
